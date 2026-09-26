@@ -5,28 +5,51 @@ import Carbon.HIToolbox
 struct KeyShortcut: Hashable, Sendable {
     let carbonKeyCode: Int
     let carbonModifiers: Int
+    let sides: ModifierSides
 
-    init(carbonKeyCode: Int, carbonModifiers: Int) {
+    init(carbonKeyCode: Int, carbonModifiers: Int, sides: ModifierSides = .either) {
         self.carbonKeyCode = carbonKeyCode
         // Mask to the supported modifiers, so device bits can't throw equality off.
-        self.carbonModifiers = carbonModifiers & Self.allModifiers
+        let masked = carbonModifiers & Self.allModifiers
+        self.carbonModifiers = masked
+        self.sides = ModifierSides(
+            control: masked & controlKey != 0 ? sides.control : nil,
+            option: masked & optionKey != 0 ? sides.option : nil,
+            command: masked & cmdKey != 0 ? sides.command : nil)
     }
 
     /// Captures from a key-down, or nil: one of ⌘⌥⌃🌐 is required, bar function keys.
-    init?(keyCode: Int, modifierFlags: NSEvent.ModifierFlags) {
+    init?(
+        keyCode: Int, modifierFlags: NSEvent.ModifierFlags, distinguishingSides: Bool = false,
+        hyperChord: NSEvent.ModifierFlags? = nil
+    ) {
         let flags = modifierFlags.intersection([.command, .option, .control, .shift, .function])
         let hasCommandingModifier = !flags.isDisjoint(with: [.command, .option, .control, .function])
         guard hasCommandingModifier || Self.isFunctionKey(keyCode) else { return nil }
-        self.init(carbonKeyCode: keyCode, carbonModifiers: Self.carbonModifiers(from: flags))
+        // Hyper's device bits are synthetic, so a chord built on it never asks for a side.
+        let isHyper = hyperChord.map(flags.isSuperset(of:)) ?? false
+        self.init(
+            carbonKeyCode: keyCode, carbonModifiers: Self.carbonModifiers(from: flags),
+            sides: distinguishingSides && !isHyper
+                ? ModifierSides(rawEventFlags: UInt64(modifierFlags.rawValue)) : .either)
+    }
+
+    /// The same chord asking for no side: all Carbon can register, and all the toggle-off view sees.
+    var sideBlind: KeyShortcut {
+        KeyShortcut(carbonKeyCode: carbonKeyCode, carbonModifiers: carbonModifiers)
     }
 
     /// The chord ✦ stands for, nil without a Hyper key; a closure, so a toggle re-renders keycaps.
     @MainActor static var displayedHyperChord: () -> NSEvent.ModifierFlags? = { nil }
 
+    /// Whether sides are recorded and shown; a closure for the same reason as the chord above.
+    @MainActor static var distinguishesSides: () -> Bool = { false }
+
     /// One string per keycap in canonical order (🌐⌃⌥⇧⌘), with the key glyph last.
     @MainActor var keycaps: [String] {
-        Self.collapsedModifierSymbols(from: modifierFlags, hyperChord: Self.displayedHyperChord())
-            + [keyGlyph]
+        Self.collapsedModifierSymbols(
+            from: modifierFlags, sides: Self.distinguishesSides() ? sides : .either,
+            hyperChord: Self.displayedHyperChord()) + [keyGlyph]
     }
 
     var modifierFlags: NSEvent.ModifierFlags { Self.modifierFlags(from: carbonModifiers) }
@@ -65,27 +88,32 @@ struct KeyShortcut: Hashable, Sendable {
         let retargeted =
             modifierFlags.subtracting(stale).union(Self.hyperChord(includesShift: includesShift))
         return KeyShortcut(
-            carbonKeyCode: carbonKeyCode, carbonModifiers: Self.carbonModifiers(from: retargeted))
+            carbonKeyCode: carbonKeyCode, carbonModifiers: Self.carbonModifiers(from: retargeted),
+            sides: sides)
     }
 
     /// `modifierSymbols` with the Hyper chord collapsed to "✦", when one is configured at all.
     static func collapsedModifierSymbols(
-        from flags: NSEvent.ModifierFlags, hyperChord: NSEvent.ModifierFlags?
+        from flags: NSEvent.ModifierFlags, sides: ModifierSides = .either,
+        hyperChord: NSEvent.ModifierFlags?
     ) -> [String] {
         guard let hyperChord, flags.isSuperset(of: hyperChord) else {
-            return modifierSymbols(from: flags)
+            return modifierSymbols(from: flags, sides: sides)
         }
-        return [HyperKeyPhysicalKey.hyperGlyph] + modifierSymbols(from: flags.subtracting(hyperChord))
+        return [HyperKeyPhysicalKey.hyperGlyph]
+            + modifierSymbols(from: flags.subtracting(hyperChord), sides: sides)
     }
 
-    /// Modifier symbols in fixed 🌐⌃⌥⇧⌘ order.
-    static func modifierSymbols(from flags: NSEvent.ModifierFlags) -> [String] {
+    /// Modifier symbols in fixed 🌐⌃⌥⇧⌘ order, sided where asked.
+    static func modifierSymbols(
+        from flags: NSEvent.ModifierFlags, sides: ModifierSides = .either
+    ) -> [String] {
         var symbols: [String] = []
         if flags.contains(.function) { symbols.append("🌐︎") }
-        if flags.contains(.control) { symbols.append("⌃") }
-        if flags.contains(.option) { symbols.append("⌥") }
+        if flags.contains(.control) { symbols.append(sides.control?.marking("⌃") ?? "⌃") }
+        if flags.contains(.option) { symbols.append(sides.option?.marking("⌥") ?? "⌥") }
         if flags.contains(.shift) { symbols.append("⇧") }
-        if flags.contains(.command) { symbols.append("⌘") }
+        if flags.contains(.command) { symbols.append(sides.command?.marking("⌘") ?? "⌘") }
         return symbols
     }
 
@@ -123,14 +151,23 @@ struct KeyShortcut: Hashable, Sendable {
 // Decoding routes through the masking initializer. See docs/features/hotkeys.md#persistence.
 extension KeyShortcut: Codable {
     private enum CodingKeys: String, CodingKey {
-        case carbonKeyCode, carbonModifiers
+        case carbonKeyCode, carbonModifiers, sides
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             carbonKeyCode: try container.decode(Int.self, forKey: .carbonKeyCode),
-            carbonModifiers: try container.decode(Int.self, forKey: .carbonModifiers)
+            carbonModifiers: try container.decode(Int.self, forKey: .carbonModifiers),
+            sides: try container.decodeIfPresent(ModifierSides.self, forKey: .sides) ?? .either
         )
+    }
+
+    /// A side-blind shortcut writes no `sides` key, so its on-disk shape never changed.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(carbonKeyCode, forKey: .carbonKeyCode)
+        try container.encode(carbonModifiers, forKey: .carbonModifiers)
+        if sides != .either { try container.encode(sides, forKey: .sides) }
     }
 }

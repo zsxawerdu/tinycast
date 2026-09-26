@@ -3,6 +3,7 @@ import Foundation
 /// Every key settings.json holds, in the order the file lists them; the raw value is its path.
 enum SettingsFileKey: String, CaseIterable, Sendable {
     // Spelled out, so renaming a case can never rename a key in someone's file.
+    case distinguishesModifierSides = "general.distinguishesModifierSides"
     case showInMenuBar = "general.showInMenuBar"
     case popToRootTimeout = "general.popToRootSeconds"
     case escapeKeyBehavior = "general.escapeKeyBehavior"

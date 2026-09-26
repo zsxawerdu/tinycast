@@ -119,6 +119,9 @@ enum SettingsSearchCatalog {
             .generalGlobalShortcuts, "App Launcher",
             keywords: ["hotkey", "shortcut", "summon", "palette"]),
         .init(
+            .generalGlobalShortcuts, "Distinguish left and right modifiers",
+            keywords: ["left", "right", "side", "command", "option", "control", "hotkey"]),
+        .init(
             .generalGeneral, "Launch at login",
             keywords: ["startup", "login item", "start", "boot"]),
         .init(

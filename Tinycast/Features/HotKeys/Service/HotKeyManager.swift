@@ -37,6 +37,11 @@ final class HotKeyManager {
         }
     }
 
+    /// Mirrors the setting; off, a stored side is kept but neither matched nor told apart.
+    var distinguishesModifierSides = false {
+        didSet { center.distinguishesSides = distinguishesModifierSides }
+    }
+
     let modifierTapMonitor = ModifierTapMonitor()
     /// Live state of the open recorder, read by its callout.
     let capture = ShortcutCaptureSession()
@@ -82,8 +87,12 @@ final class HotKeyManager {
         for action in candidateActions { register(action) }
 
         modifierTapMonitor.onTrigger = { [weak self] binding in
-            guard let self, let action = modifierTaps[binding] else { return }
-            perform(action)
+            guard let self else { return }
+            if case .doubleTap(let modifier, let side) = binding {
+                performDoubleTap(DoubleTapDetector.Tap(modifier: modifier, side: side))
+            } else if let action = modifierTaps[binding] {
+                perform(action)
+            }
         }
         modifierTapMonitor.start()
         syncModifierTaps()
@@ -212,11 +221,16 @@ final class HotKeyManager {
 
     /// What else holds `binding`, or nil. Whole-binding comparison covers every kind alike.
     func conflictOwner(of binding: HotKeyBinding, excluding action: HotKeyAction) -> String? {
-        for candidate in candidateActions
-        where candidate != action && self.binding(for: candidate) == binding {
+        let sought = comparable(binding)
+        for candidate in candidateActions where candidate != action {
+            guard let held = self.binding(for: candidate), comparable(held) == sought else { continue }
             return displayName(of: candidate)
         }
         return nil
+    }
+
+    private func comparable(_ binding: HotKeyBinding) -> HotKeyBinding {
+        distinguishesModifierSides ? binding : binding.sideBlind
     }
 
     /// Every action that could hold a binding: the search space for conflicts and the map.
@@ -285,7 +299,24 @@ final class HotKeyManager {
             guard let binding = binding(for: action), binding.usesModifierTapMonitor else { continue }
             modifierTaps[binding] = action
         }
-        modifierTapMonitor.update(bound: Set(modifierTaps.keys))
+        // Side-blind: the monitor sees a tap and reports its side, and routing happens here.
+        modifierTapMonitor.update(bound: Set(modifierTaps.keys.map(\.sideBlind)))
+    }
+
+    /// Routed like a Carbon chord, through the same `winner`, so both engines agree on sides.
+    private func performDoubleTap(_ tap: DoubleTapDetector.Tap) {
+        var candidates: [String: ModifierSides] = [:]
+        var actions: [String: HotKeyAction] = [:]
+        for (binding, action) in modifierTaps {
+            guard case .doubleTap(tap.modifier, let side) = binding else { continue }
+            candidates[action.defaultsKey] = ModifierSides(tap.modifier, side: side)
+            actions[action.defaultsKey] = action
+        }
+        let winner = ModifierSides.winner(
+            among: candidates, pressed: ModifierSides(tap.modifier, side: tap.side),
+            distinguishing: distinguishesModifierSides)
+        guard let winner, let action = actions[winner] else { return }
+        perform(action)
     }
 
     private func perform(_ action: HotKeyAction) {

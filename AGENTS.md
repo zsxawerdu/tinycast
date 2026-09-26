@@ -99,6 +99,10 @@ feature's doc, under its own `## Invariants`.
   `CountryZoneData.generated.swift` from `node Scripts/gen-countries.js`, and
   `Resources/RaycastRuntime.generated.js` from `Scripts/raycast-runtime/build.mjs` — the runtime is
   committed so building the app never needs Node.
+- **The Hyper Key sources are off-limits.** Never edit `HotKeys/Service/HyperKeyTap.swift` or
+  `HotKeys/Model/HyperKey.swift`, not even a rename or a constant extraction. Duplicate what you need
+  elsewhere (`DeviceModifierFlag` in `ModifierSides.swift` is a deliberate copy of
+  `HyperKeyTap.DeviceFlag`) and guard Hyper from outside, as `KeyShortcut` does.
 - **`DesignSystem/Scrolling/EdgeDissolve.swift` and `ThinScrollbar.swift` are off-limits.** Both are
   tuned by eye against the palette's floating bars, so any edit is a visual regression. Needing to touch
   one to fix a scroll bug means the real fix belongs elsewhere.

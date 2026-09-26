@@ -14,6 +14,8 @@ final class ShortcutCaptureSession {
     private(set) var heldModifiers: NSEvent.ModifierFlags = []
     private(set) var heldGlobe = false
     private(set) var awaitingSecondGlobe = false
+    /// Which side each held modifier is on, so the callout previews what would be recorded.
+    private(set) var heldSides = ModifierSides.either
     private(set) var conflict: Conflict?
 
     private static let conflictDwell: Duration = .seconds(1.5)
@@ -30,6 +32,7 @@ final class ShortcutCaptureSession {
     func start(action: HotKeyAction, hotKeys: HotKeyManager) {
         stop()
         heldModifiers = NSEvent.modifierFlags.intersection([.command, .option, .control, .shift])
+        heldSides = .either
 
         // Main-thread handlers that predate actor annotations; only Sendable pieces cross in.
         if let monitor = NSEvent.addLocalMonitorForEvents(
@@ -58,17 +61,18 @@ final class ShortcutCaptureSession {
                 let flags = all.intersection([.command, .option, .control, .shift])
                 // `.function` only: `.capsLock` is the latch, and would refuse every double-tap.
                 let hasOthers = all.contains(.function)
+                let sides = ModifierSides(rawEventFlags: UInt64(all.rawValue))
                 let timestamp = event.timestamp
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.heldModifiers = flags
                     if keyCode == kVK_Function { self.heldGlobe = all.contains(.function) }
+                    self.heldSides = sides
                     guard let hotKeys else { return }
                     self.handleModifiers(
-                        flags, isGlobeKey: keyCode == kVK_Function,
+                        flags, sides: sides, isGlobeKey: keyCode == kVK_Function,
                         functionDown: all.contains(.function), hasOtherModifiers: hasOthers,
-                        at: timestamp, action: action,
-                        hotKeys: hotKeys)
+                        at: timestamp, action: action, hotKeys: hotKeys)
                 }
                 return event
             })
@@ -109,6 +113,7 @@ final class ShortcutCaptureSession {
         conflict = nil
         heldModifiers = []
         heldGlobe = false
+        heldSides = .either
         detector.reset()
         globeDetector.cancel()
         activeRecorderView = nil
@@ -151,12 +156,17 @@ final class ShortcutCaptureSession {
             return
         }
         // Not a bindable combo (e.g. a bare letter): swallow it and keep recording.
-        guard let shortcut = KeyShortcut(keyCode: keyCode, modifierFlags: flags) else { return }
+        guard
+            let shortcut = KeyShortcut(
+                keyCode: keyCode, modifierFlags: flags,
+                distinguishingSides: KeyShortcut.distinguishesSides(),
+                hyperChord: KeyShortcut.displayedHyperChord())
+        else { return }
         commit(.combo(shortcut), action: action, hotKeys: hotKeys)
     }
 
     private func handleModifiers(
-        _ flags: NSEvent.ModifierFlags, isGlobeKey: Bool, functionDown: Bool,
+        _ flags: NSEvent.ModifierFlags, sides: ModifierSides, isGlobeKey: Bool, functionDown: Bool,
         hasOtherModifiers: Bool, at timestamp: TimeInterval,
         action: HotKeyAction, hotKeys: HotKeyManager
     ) {
@@ -188,11 +198,14 @@ final class ShortcutCaptureSession {
         }
         // `NSEvent.timestamp` is the same monotonic basis `ModifierTapMonitor` feeds in.
         guard
-            let modifier = detector.handle(
-                .modifiers(Self.doubleTapModifiers(in: flags), hasOtherModifiers: hasOtherModifiers),
+            let tap = detector.handle(
+                .modifiers(
+                    Self.doubleTapModifiers(in: flags), sides: sides,
+                    hasOtherModifiers: hasOtherModifiers),
                 at: timestamp)
         else { return }
-        commit(.doubleTap(modifier), action: action, hotKeys: hotKeys)
+        let side = KeyShortcut.distinguishesSides() ? tap.side : nil
+        commit(.doubleTap(tap.modifier, side: side), action: action, hotKeys: hotKeys)
     }
 
     private func cancelGlobeCommit() {

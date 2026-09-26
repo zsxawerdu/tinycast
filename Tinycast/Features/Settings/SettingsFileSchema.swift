@@ -29,6 +29,7 @@ enum SettingsFileSchema {
         }
 
         switch key {
+        case .distinguishesModifierSides: return bind(settings, \.distinguishesModifierSides)
         case .showInMenuBar: return bind(settings, \.showInMenuBar)
         case .popToRootTimeout: return bind(settings, \.popToRootTimeout)
         case .escapeKeyBehavior: return bind(settings, \.escapeKeyBehavior)

@@ -378,9 +378,11 @@ final class AppCore {
                 guard settings.hyperKey != .none else { return nil }
                 return KeyShortcut.hyperChord(includesShift: settings.hyperKeyIncludesShift)
             }
+            KeyShortcut.distinguishesSides = { [settings] in settings.distinguishesModifierSides }
             SystemActionRunner.onAsyncFailure = { [weak self] id, failure in
                 self?.systemActionCoordinator.presentSystemActionFailure(id: id, failure: failure)
             }
+            hotKeys.distinguishesModifierSides = settings.distinguishesModifierSides
             hotKeys.start(
                 customCommandIDs: Set(customCommands.commands.map(\.id)),
                 quicklinkIDs: Set(quicklinks.quicklinks.map(\.id)),
@@ -637,6 +639,9 @@ final class AppCore {
         track({ _ = $0.snippetsEnabled }, reproject: { $0.snippetCoordinator.applySnippetsEnabled() })
         // Not a feature switch, but the same re-projection: a combo has the chord's ⇧ bit baked in.
         track({ _ = $0.hyperKeyIncludesShift }, reproject: { $0.applyHyperChord() })
+        track(
+            { _ = $0.distinguishesModifierSides },
+            reproject: { $0.hotKeys.distinguishesModifierSides = $0.settings.distinguishesModifierSides })
         track(
             { _ = $0.snippetsShowInLauncher },
             reproject: { $0.snippetCoordinator.applySnippetsLauncherPresence() })

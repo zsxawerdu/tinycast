@@ -28,7 +28,7 @@ struct HotKeySpelling: Sendable {
     func text(for binding: HotKeyBinding) -> String {
         switch binding {
         case .combo(let shortcut): text(for: shortcut)
-        case .doubleTap(let modifier): "double-tap " + Self.name(of: modifier)
+        case .doubleTap(let modifier, _): "double-tap " + Self.name(of: modifier)
         case .globe: "globe"
         case .doubleGlobe: "double-tap globe"
         }
@@ -41,7 +41,7 @@ struct HotKeySpelling: Sendable {
         if spelled.hasPrefix(Self.doubleTapPrefix) {
             let modifier = String(spelled.dropFirst(Self.doubleTapPrefix.count))
             if modifier == "globe" { return .doubleGlobe }
-            return Self.doubleTapModifier(named: modifier).map(HotKeyBinding.doubleTap)
+            return Self.doubleTapModifier(named: modifier).map { .doubleTap($0) }
         }
         return shortcut(from: spelled).map(HotKeyBinding.combo)
     }

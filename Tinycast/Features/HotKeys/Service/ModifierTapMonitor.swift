@@ -94,16 +94,18 @@ final class ModifierTapMonitor: HealthCheckable {
             {
                 handleGlobe(gesture)
             }
-            input = .modifiers(modifiers, hasOtherModifiers: Self.hasOtherModifiers(in: flags))
+            input = .modifiers(
+                modifiers, sides: ModifierSides(rawEventFlags: flagsRaw),
+                hasOtherModifiers: Self.hasOtherModifiers(in: flags))
         } else {
             globeDetector.cancel()
             cancelPendingSingleGlobe()
             input = .otherInput
         }
-        guard let modifier = doubleTapDetector.handle(input, at: now),
-            bound.contains(.doubleTap(modifier))
+        guard let tap = doubleTapDetector.handle(input, at: now),
+            bound.contains(.doubleTap(tap.modifier))
         else { return }
-        onTrigger?(.doubleTap(modifier))
+        onTrigger?(.doubleTap(tap.modifier, side: tap.side))
     }
 
     private func handleGlobe(_ gesture: GlobeTapDetector.Gesture) {

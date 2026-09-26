@@ -7,14 +7,17 @@ import Foundation
 private struct Keyboard {
     var detector = DoubleTapDetector()
     private(set) var fired: [DoubleTapModifier] = []
+    private(set) var firedSides: [ModifierSide?] = []
 
     mutating func press(
-        _ modifiers: Set<DoubleTapModifier>, other: Bool = false, at time: TimeInterval
+        _ modifiers: Set<DoubleTapModifier>, sides: ModifierSides = .either, other: Bool = false,
+        at time: TimeInterval
     ) {
-        if let modifier = detector.handle(
-            .modifiers(modifiers, hasOtherModifiers: other), at: time)
+        if let tap = detector.handle(
+            .modifiers(modifiers, sides: sides, hasOtherModifiers: other), at: time)
         {
-            fired.append(modifier)
+            fired.append(tap.modifier)
+            firedSides.append(tap.side)
         }
     }
 
@@ -23,13 +26,14 @@ private struct Keyboard {
     }
 
     mutating func otherInput(at time: TimeInterval) {
-        if let modifier = detector.handle(.otherInput, at: time) { fired.append(modifier) }
+        if let tap = detector.handle(.otherInput, at: time) { fired.append(tap.modifier) }
     }
 
     mutating func tap(
-        _ modifier: DoubleTapModifier, at time: TimeInterval, hold: TimeInterval = 0.05
+        _ modifier: DoubleTapModifier, side: ModifierSide? = nil, at time: TimeInterval,
+        hold: TimeInterval = 0.05
     ) {
-        press([modifier], at: time)
+        press([modifier], sides: ModifierSides(modifier, side: side), at: time)
         release(at: time + hold)
     }
 }
@@ -62,6 +66,7 @@ struct DoubleTapDetectorTests {
         spelling()
         globeTap()
         globeChord()
+        modifierSides()
         firing()
         timing()
         chords()
@@ -321,6 +326,128 @@ struct DoubleTapDetectorTests {
                     includesShift: true))?.carbonModifiers
                 == combo([.control, .option, .shift, .command]).carbonModifiers,
             "recording while Hyper is held captures exactly the chord")
+    }
+
+    // MARK: - Modifier sides
+
+    static func modifierSides() {
+        typealias Flag = DeviceModifierFlag
+        let rightCommand = NSEvent.ModifierFlags(
+            rawValue: NSEvent.ModifierFlags.command.rawValue | UInt(Flag.rightCommand))
+
+        expect(
+            KeyShortcut(keyCode: kVK_ANSI_G, modifierFlags: rightCommand) == combo(.command),
+            "with the setting off a capture is side-blind, device bits or not")
+        let sided = KeyShortcut(
+            keyCode: kVK_ANSI_G, modifierFlags: rightCommand, distinguishingSides: true)
+        expect(sided?.sides == ModifierSides(command: .right), "a sided capture keeps right ⌘")
+        expect(sided != combo(.command), "right ⌘G is not the side-blind ⌘G")
+
+        let bothCommands = NSEvent.ModifierFlags(
+            rawValue: rightCommand.rawValue | UInt(Flag.leftCommand))
+        expect(
+            KeyShortcut(
+                keyCode: kVK_ANSI_G, modifierFlags: bothCommands, distinguishingSides: true)
+                == combo(.command),
+            "both sides of one modifier held reads as either")
+        expect(
+            ModifierSides(rawEventFlags: Flag.leftShift | Flag.rightControl)
+                == ModifierSides(control: .right),
+            "⇧ is never sided, and ⌃ reads its own right-hand bit")
+        expect(
+            KeyShortcut(
+                carbonKeyCode: kVK_ANSI_G, carbonModifiers: cmdKey,
+                sides: ModifierSides(option: .left, command: .left)
+            ).sides == ModifierSides(command: .left),
+            "a side for a modifier the chord lacks is dropped, so equality can't drift")
+
+        let blindData = (try? JSONEncoder().encode(combo(.command))) ?? Data()
+        expect(
+            String(bytes: blindData, encoding: .utf8)?.contains("sides") == false,
+            "a side-blind shortcut keeps its on-disk shape")
+        expect(
+            (try? JSONDecoder().decode(KeyShortcut.self, from: blindData)) == combo(.command),
+            "a shortcut stored without sides decodes as either")
+        let sidedData = (try? JSONEncoder().encode(sided)) ?? Data()
+        expect(
+            sided != nil && (try? JSONDecoder().decode(KeyShortcut?.self, from: sidedData)) == sided,
+            "a sided shortcut round-trips")
+
+        let twins = [
+            "blind": ModifierSides.either, "left": ModifierSides(command: .left),
+            "rightBoth": ModifierSides(option: .right, command: .right),
+            "right": ModifierSides(command: .right)
+        ]
+        func winner(_ pressed: ModifierSides, distinguishing: Bool = true) -> String? {
+            ModifierSides.winner(among: twins, pressed: pressed, distinguishing: distinguishing)
+        }
+        expect(winner(ModifierSides(command: .left)) == "left", "left ⌘ fires the left twin")
+        expect(
+            winner(ModifierSides(option: .right, command: .right)) == "rightBoth",
+            "the binding asking for the most sides wins over a looser one")
+        expect(
+            winner(ModifierSides(option: .left, command: .right)) == "right",
+            "a side the binding doesn't ask about can't disqualify it")
+        expect(winner(.either) == "blind", "both sides held falls through to the side-blind twin")
+        expect(
+            ModifierSides.winner(
+                among: ["left": ModifierSides(command: .left)],
+                pressed: ModifierSides(command: .right), distinguishing: true) == nil,
+            "the wrong side fires nothing when no side-blind twin exists")
+        expect(
+            winner(ModifierSides(command: .right), distinguishing: false) == "blind",
+            "with the setting off sides are ignored and the side-blind twin wins")
+        expect(
+            ModifierSides.winner(
+                among: ["b": ModifierSides(command: .right), "a": ModifierSides(command: .left)],
+                pressed: ModifierSides(command: .right), distinguishing: false) == "a",
+            "with the setting off sided twins resolve by id, so the pick is stable")
+
+        var sameSide = Keyboard()
+        sameSide.tap(.command, side: .right, at: 0)
+        sameSide.tap(.command, side: .right, at: 0.1)
+        expect(sameSide.firedSides == [.right], "two right-⌘ taps are a right-sided double-tap")
+        var mixedSides = Keyboard()
+        mixedSides.tap(.command, side: .left, at: 0)
+        mixedSides.tap(.command, side: .right, at: 0.1)
+        expect(
+            mixedSides.fired == [.command] && mixedSides.firedSides == [nil],
+            "left then right ⌘ still double-taps, but claims no side")
+        expect(
+            ModifierSides(.shift, side: .left) == .either, "a ⇧ double-tap is never sided")
+
+        let hyper = KeyShortcut.hyperChord(includesShift: false)
+        let leftHyper = NSEvent.ModifierFlags(
+            rawValue: hyper.rawValue
+                | UInt(Flag.leftControl | Flag.leftOption | Flag.leftCommand))
+        expect(
+            KeyShortcut(
+                keyCode: kVK_ANSI_G, modifierFlags: leftHyper, distinguishingSides: true,
+                hyperChord: hyper)?.sides == .either,
+            "a chord built on Hyper never asks for a side, its device bits being synthetic")
+        expect(
+            KeyShortcut(
+                keyCode: kVK_ANSI_G, modifierFlags: rightCommand, distinguishingSides: true,
+                hyperChord: hyper)?.sides == ModifierSides(command: .right),
+            "a configured Hyper key leaves an ordinary combo sided")
+        expect(
+            KeyShortcut.modifierSymbols(
+                from: [.control, .shift, .command],
+                sides: ModifierSides(control: .left, command: .right)) == ["L⌃", "⇧", "R⌘"],
+            "a sided keycap is marked L or R, and ⇧ never is")
+        expect(
+            KeyShortcut.collapsedModifierSymbols(
+                from: hyper.union(.shift), sides: ModifierSides(command: .left), hyperChord: hyper)
+                == ["✦", "⇧"],
+            "✦ swallows the chord's modifiers, sides and all")
+
+        let sidedNarrow = KeyShortcut(
+            carbonKeyCode: kVK_ANSI_G,
+            carbonModifiers: KeyShortcut.carbonModifiers(from: [.control, .option, .command]),
+            sides: ModifierSides(command: .right))
+        expect(
+            sidedNarrow.retargetingHyper(includesShift: true).sides == sidedNarrow.sides,
+            "re-pointing the Hyper chord keeps the recorded sides")
     }
 
     static func hyperRetargeting() {

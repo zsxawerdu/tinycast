@@ -82,6 +82,7 @@ because the app rewrites the file.
 ```json
 {
   "general": {
+    "distinguishesModifierSides": false,
     "showInMenuBar": true,
     "popToRootSeconds": 0,
     "escapeKeyBehavior": "navigateBackOrClose",

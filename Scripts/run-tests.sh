@@ -275,6 +275,7 @@ run fallback-test          Tinycast/Features/Launcher/Model/Fallback.swift \
 run dictionary-test        Tinycast/Features/Dictionary/Model/DictionaryEntry.swift \
                            Tinycast/Features/Dictionary/Model/DictionaryMarkup.swift
 run hotkey-test            Tinycast/Features/HotKeys/Model/DoubleTapModifier.swift \
+                           Tinycast/Features/HotKeys/Model/ModifierSides.swift \
                            Tinycast/Features/HotKeys/Model/DoubleTapDetector.swift \
                            Tinycast/Features/HotKeys/Model/GlobeTapDetector.swift \
                            Tinycast/Features/HotKeys/Model/HotKeyBinding.swift \

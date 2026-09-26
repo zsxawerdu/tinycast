@@ -31,6 +31,9 @@ the keycap rendering — only the _engine_ differs.
   synthesised one.
 - `KeyShortcut`'s hand-written `init(from:)` is a correctness seam, not a format one: it routes every
   decode through the initializer that masks device modifier bits off.
+- **A modifier's side lives in `KeyShortcut.sides`, never in `carbonModifiers`.** `ModifierSides` holds
+  a `left`/`right` per ⌃, ⌥ and ⌘ with `nil` meaning either, ⇧ is never sided, and the initializer
+  drops a side for a modifier the chord lacks so two spellings of one shortcut cannot be unequal.
 - **The modifier-only detectors stay Foundation-only and pure** for `hotkey-test`, with the clock
   injected as a parameter. Every `CGEvent` call lives in
   `Service/ModifierTapMonitor.swift`, which is listen-only, installs *only* while a modifier-only
@@ -70,6 +73,38 @@ the first successful read of the library, since a failed read looks exactly like
 but the guarantee that every decode runs through the initializer that masks device modifier bits off.
 `SettingsBackup.HotkeyBackup` stores the same values, so the backup file carries this shape too; only
 export → import within one build is guaranteed to round-trip.
+
+A sided combo adds `"sides":{"command":"right"}` beside the two integers, naming only the modifiers
+that ask for a side. A side-blind shortcut writes no `sides` key at all — its hand-written
+`encode(to:)` exists for that — and a stored shortcut without one decodes as either side.
+`KeyShortcut(keyCode:modifierFlags:distinguishingSides:)` is what reads a side off the device bits
+(`DeviceModifierFlag`, from `IOLLEvent.h` — its own copy, since `HyperKeyTap` is not to be edited), and both sides of one modifier held together read as
+either. A sided double-tap writes `{"doubleTap":{"_0":"command","side":"right"}}`, and a side-blind
+one omits `side`, so it too is the shape it always was.
+
+### Sided twins share one Carbon registration
+
+`RegisterEventHotKey` cannot tell sides apart and refuses the same chord twice, so `HotKeyCenter`
+registers each **side-blind chord** once (`KeyShortcut.sideBlind`) however many bindings sit on it, and
+drops the registration when the last of them goes. A hot-key event carries no flags, so on fire the
+center reads the sides held right now from `CGEventSource.flagsState` — injectable as `pressedSides` —
+and `ModifierSides.winner` picks the binding: the one asking for the most sides among those the press
+satisfies, so right-⌘K beats a side-blind ⌘K under the right hand and the side-blind twin takes every
+other press. The wrong side with no side-blind twin fires nothing. `winner` is pure and lives in
+`Model/`, which is what lets `hotkey-test` cover the routing without Carbon.
+
+**Turning the setting off keeps every stored side and ignores it.** Nothing is rewritten, so flipping
+it back loses nothing. While off, `winner` skips the side test and prefers the side-blind twin, then
+the lowest registration id so the pick is stable, and `HotKeyManager.conflictOwner` compares bindings
+through `sideBlind` — a new ⌘K conflicts with a stored left-⌘K it would otherwise shadow. `AppCore`
+tracks the setting and hands it to `HotKeyManager.distinguishesModifierSides`; no re-registration is
+needed, because the Carbon chord is the same either way.
+
+`KeyShortcut.distinguishesSides` is the display-and-record half of the same setting, a closure for the
+reason `displayedHyperChord` is one. While it answers true the recorder captures sides and a sided
+modifier's keycap reads **L⌘** or **R⌘** everywhere `keycaps` renders; while false every keycap is the
+plain glyph, because a side that is not matched must not be shown. The mark is a letter rather than an
+arrow because ←/→ already mean the arrow keys.
 
 Every built-in command is bindable: `CommandID.hotKeyAction` answers `.command(self)` by default, and
 names the three exceptions. Open in Browser and Run Shell Command are query-driven — their input is the
@@ -142,6 +177,13 @@ details are load-bearing:
   binding records regardless; the recorder shows an inline warning that opens System Settings, and the
   one-second health timer installs the tap the moment the grant lands.
 
+A double-tap can be sided too. The detector is fed `ModifierSides` with each `flagsChanged`, remembers
+the side of the press, and reports a `Tap` — the modifier plus a side that is `nil` when the two taps
+came from different sides, so left-then-right ⌘ still fires but only a side-blind binding. ⇧ never
+carries a side. `HotKeyManager.performDoubleTap` routes through the same `ModifierSides.winner` as a
+Carbon chord, so left, right and side-blind twins of one modifier coexist under identical rules in
+both engines.
+
 ⇧ is bindable this way even though `KeyShortcut` rejects a bare ⇧ combo: a double-_tap_ is unambiguous
 where a bare ⇧ combo would shadow typing.
 
@@ -199,6 +241,14 @@ A keyboard event built from `.combinedSessionState` inherits the source's modifi
 that ended the hold is still in flight a runloop turn later — so the Escape went out as ⌃⌥⇧⌘Escape.
 Terminals read the raw `0x1B` and did not care; a focused field editor and any exact-match keymap
 swallowed it, which is why Quick Press worked in Ghostty but never in Zed or the palette itself.
+
+### A Hyper chord is never sided
+
+The device bits on a rewritten event are the tap's own left-side constants, not a hand on the keyboard,
+so a side read from them would be fiction — and a right-side Hyper key leaves both ⌘ bits set at once.
+`KeyShortcut(keyCode:modifierFlags:distinguishingSides:hyperChord:)` therefore records `.either` for any
+capture whose modifiers cover the configured chord. `retargetingHyper` carries `sides` through
+untouched, and ✦ swallows the chord's modifiers whatever side an older recording gave them.
 
 ### ✦ is the notation, not a preference
 

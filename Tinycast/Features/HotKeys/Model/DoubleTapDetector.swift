@@ -7,25 +7,32 @@ struct DoubleTapDetector {
     /// Longest gap between the first tap's release and the second tap's press.
     static let maxGap: TimeInterval = 0.30
 
+    /// A completed double-tap; the side is nil when the two taps came from different sides.
+    struct Tap: Equatable, Sendable {
+        let modifier: DoubleTapModifier
+        let side: ModifierSide?
+    }
+
     enum Input: Sendable {
         /// Which of the four eligible modifiers are now held, and whether `fn` is down too.
-        case modifiers(Set<DoubleTapModifier>, hasOtherModifiers: Bool)
+        case modifiers(
+            Set<DoubleTapModifier>, sides: ModifierSides = .either, hasOtherModifiers: Bool)
         /// A key press or mouse click, which turns the press in flight into a chord.
         case otherInput
     }
 
     private var held: Set<DoubleTapModifier> = []
-    private var press: (modifier: DoubleTapModifier, startedAt: TimeInterval)?
-    private var pendingTap: (modifier: DoubleTapModifier, releasedAt: TimeInterval)?
+    private var press: (tap: Tap, startedAt: TimeInterval)?
+    private var pendingTap: (tap: Tap, releasedAt: TimeInterval)?
 
-    /// The modifier whose double-tap completed, fired on the second release, never the press.
-    mutating func handle(_ input: Input, at now: TimeInterval) -> DoubleTapModifier? {
+    /// The double-tap that completed, fired on the second release, never the press.
+    mutating func handle(_ input: Input, at now: TimeInterval) -> Tap? {
         switch input {
         case .otherInput:
             invalidate()
             return nil
-        case .modifiers(let modifiers, let hasOtherModifiers):
-            return handle(modifiers, hasOtherModifiers: hasOtherModifiers, at: now)
+        case .modifiers(let modifiers, let sides, let hasOtherModifiers):
+            return handle(modifiers, sides: sides, hasOtherModifiers: hasOtherModifiers, at: now)
         }
     }
 
@@ -35,8 +42,9 @@ struct DoubleTapDetector {
     }
 
     private mutating func handle(
-        _ modifiers: Set<DoubleTapModifier>, hasOtherModifiers: Bool, at now: TimeInterval
-    ) -> DoubleTapModifier? {
+        _ modifiers: Set<DoubleTapModifier>, sides: ModifierSides, hasOtherModifiers: Bool,
+        at now: TimeInterval
+    ) -> Tap? {
         let previous = held
         held = modifiers
 
@@ -51,25 +59,26 @@ struct DoubleTapDetector {
             invalidate()
             return nil
         }
-        press = (modifier, now)
+        press = (Tap(modifier: modifier, side: sides.side(of: modifier)), now)
         return nil
     }
 
-    private mutating func completeTap(at now: TimeInterval) -> DoubleTapModifier? {
+    private mutating func completeTap(at now: TimeInterval) -> Tap? {
         guard let press, now - press.startedAt <= Self.maxHold else {
             invalidate()
             return nil
         }
         self.press = nil
 
-        guard let pending = pendingTap, pending.modifier == press.modifier,
+        guard let pending = pendingTap, pending.tap.modifier == press.tap.modifier,
             press.startedAt - pending.releasedAt <= Self.maxGap
         else {
-            pendingTap = (press.modifier, now)
+            pendingTap = (press.tap, now)
             return nil
         }
         pendingTap = nil
-        return press.modifier
+        return pending.tap.side == press.tap.side
+            ? press.tap : Tap(modifier: press.tap.modifier, side: nil)
     }
 
     private mutating func invalidate() {

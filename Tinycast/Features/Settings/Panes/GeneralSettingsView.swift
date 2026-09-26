@@ -37,6 +37,10 @@ struct GeneralSettingsView: View {
                 SettingsRow(title: "App Launcher", anchor: .generalGlobalShortcuts) {
                     ShortcutRecorder(action: .togglePalette)
                 }
+                Toggle(isOn: $settings.distinguishesModifierSides) {
+                    SettingsRowTitle(.generalGlobalShortcuts, "Distinguish left and right modifiers")
+                    Text("Left and right ⌘, ⌥ and ⌃ record as different shortcuts.")
+                }
             } header: {
                 SettingsSectionHeader(.generalGlobalShortcuts)
             }
