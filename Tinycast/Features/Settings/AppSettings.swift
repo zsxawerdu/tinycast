@@ -510,6 +510,14 @@ final class AppSettings {
         }
     }
 
+    var windowThrowEnabled: Bool {
+        didSet { defaults.set(windowThrowEnabled, forKey: Key.windowThrowEnabled.rawValue) }
+    }
+
+    var windowThrowChord: WindowThrowGesture.Chord {
+        didSet { defaults.set(windowThrowChord.rawValue, forKey: Key.windowThrowChord.rawValue) }
+    }
+
     /// Points between tiled windows and the screen edge; `WindowPlacementEngine` caps it.
     var windowGap: Int {
         didSet { defaults.set(windowGap, forKey: Key.windowGap.rawValue) }
@@ -745,6 +753,9 @@ final class AppSettings {
             defaults.object(forKey: Key.windowManagementShowInLauncher.rawValue) == nil
             || defaults.bool(forKey: Key.windowManagementShowInLauncher.rawValue)
         // Unset reads as 0, which is the intended default anyway — no gap.
+        windowThrowEnabled = defaults.bool(forKey: Key.windowThrowEnabled.rawValue)
+        windowThrowChord = defaults.string(forKey: Key.windowThrowChord.rawValue)
+            .flatMap(WindowThrowGesture.Chord.init(rawValue:)) ?? .controlOption
         windowGap = defaults.integer(forKey: Key.windowGap.rawValue)
         windowCycle =
             defaults.string(forKey: Key.windowCycle.rawValue).flatMap(WindowCycle.init) ?? .off

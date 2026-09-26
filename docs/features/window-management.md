@@ -19,7 +19,7 @@ entries and a still-registered shortcut moves nothing.
 - **`WindowCommand.swift`, `WindowPlacementEngine.swift`, `WindowActionMemory.swift` and `SpaceGesture.swift`
   stay Foundation + CoreGraphics and pure** — no AX, no `NSScreen`, no clock (`WindowActionMemory`
   takes `now` as a parameter, `SpaceGesture` takes `timestamp`). Every `AXUIElement` call and the
-  Cocoa↔AX flip live in `Service/`; every `CGEvent` call lives in `SpaceSwitcher.swift`.
+  Cocoa↔AX flip live in `Service/`; synthetic `CGEvent` posting lives in `SpaceSwitcher.swift`.
 - **`AXWindowAccess` is the one AX layer**, shared by the mover, the layout runner and
   [Navigation](navigation.md)'s window switcher. Its `write` is the size → position → size sequence:
   two copies of it would land a stubborn app two ways.
@@ -116,6 +116,40 @@ An oversized or off-screen window is always clamped back onto the display; `clam
 edge rather than shoving the window off the far side. Maximize Height and Maximize Width keep the
 untouched axis's position but clamp it, so a window sitting off the display doesn't come back
 full-height and still off-screen.
+
+## Throw a window
+
+Settings › Window Management › Throw a window is opt-in, with a two-modifier hold (⌃⌥ by
+default). Hold the pair anywhere on screen, move the pointer,
+then release either modifier to place the window captured at the start. There is no preview,
+no live movement, no cursor warping and no title-bar targeting.
+
+`WindowThrowGesture` is pure: a 40-point radial dead zone, four dominant-axis directions, and a
+12-point axis-switch margin. Returning to the dead zone clears the choice. Both modifiers must
+be released before another throw. Extra modifiers, typing (including Escape), clicks, dragging
+and scrolling cancel rather than consume the input. Caps Lock does not interfere.
+
+Directions map directly to existing window commands: left → Left Half, right → Right Half,
+up → Maximize (not native fullscreen), and down → Center (preserving size). Throws always use
+the first placement, regardless of the keyboard-command cycling setting. There is no destination
+mode or cross-display throw; the existing placement engine owns all geometry and gaps.
+
+`WindowThrowMonitor`, owned by `AppCore`, installs local and global AppKit event monitors only
+while both feature switches are enabled. Accessibility is required. Shortcut recording pauses
+recognition. A 100 ms validation task checks a captured window's focus and screen snapshot and
+cancels on missing releases; sleep and session changes cancel as well. Focus and geometry are
+checked again before committing. The palette itself cannot be thrown. Input is observed, not
+suppressed, so a modifier pair remains available to the focused app and its regular shortcuts.
+
+`WindowMover.ThrowTarget` retains the exact window identity, not just its application, and uses
+the existing placement/write/read-back/memory sequence. Restore therefore undoes a throw like
+any other placement. The enabled flag and chord ride in settings backups.
+
+`Tests/window-throw-test.swift` covers recognition, release/rearm, cancellation, hysteresis,
+and all four directional command mappings. Real event delivery, permission
+changes, focus transitions, Restore, and tiling on mixed-resolution displays still need manual
+verification. In particular, try every modifier pair with ordinary typing and app shortcuts,
+release each key first, and disable the feature during a hold.
 
 ## Custom sizes
 

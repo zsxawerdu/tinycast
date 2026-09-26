@@ -5,7 +5,7 @@ import AppKit
 @MainActor
 final class WindowMover {
     /// `CFEqual`/`CFHash` are the supported identity; the pid separates two processes' elements.
-    private struct ExternalKey: Hashable {
+    fileprivate struct ExternalKey: Hashable {
         let pid: pid_t
         let element: AXUIElement
 
@@ -20,14 +20,14 @@ final class WindowMover {
     }
 
     /// A closed window's identifier can be reused; `decide` rejects the stale record on its frame.
-    private enum WindowKey: Hashable {
+    fileprivate enum WindowKey: Hashable {
         case external(ExternalKey)
         case own(ObjectIdentifier)
     }
 
     /// One of ours or another app's: an AX call into our own process would stall the main thread.
     @MainActor
-    private enum Surface {
+    fileprivate enum Surface {
         case external(application: AXUIElement, window: AXUIElement)
         case own(NSWindow)
 
@@ -145,7 +145,7 @@ final class WindowMover {
     }
 
     /// The window a command targets, resolved once per press.
-    private struct FocusedWindow {
+    fileprivate struct FocusedWindow {
         let surface: Surface
         let key: WindowKey
     }
@@ -195,6 +195,38 @@ final class WindowMover {
             resolve: { current, screens, _ in
                 size.placement(for: current, screens: screens, gap: gap)
             })
+    }
+
+    struct ThrowTarget {
+        fileprivate let focused: FocusedWindow
+        fileprivate let screens: [WindowPlacementEngine.Screen]
+    }
+
+    func captureThrowTarget() -> ThrowTarget? {
+        guard Permissions.isAccessibilityTrusted(), !(NSApp.keyWindow is PalettePanel),
+            let focused = focusedWindow(of: WindowTarget.current()),
+            !focused.surface.isFullScreen, focused.surface.canMove
+        else { return nil }
+        let screens = NSScreen.screens
+        return ThrowTarget(
+            focused: focused, screens: AXScreens.converted(screens, geometry: AXGeometry(screens: screens)))
+    }
+
+    func isCurrent(_ target: ThrowTarget) -> Bool {
+        let screens = NSScreen.screens
+        return AXScreens.converted(screens, geometry: AXGeometry(screens: screens)) == target.screens
+            && focusedWindow(of: WindowTarget.current())?.key == target.focused.key
+    }
+
+    func performThrow(
+        _ direction: WindowThrowGesture.Direction, target: ThrowTarget, gap: CGFloat
+    ) {
+        guard isCurrent(target) else { return }
+        let command = direction.command
+        _ = place(target.focused, command: command, gap: gap, cycleLength: { _ in 1 }) { current, screens, _ in
+            WindowPlacementEngine.placement(for: .init(
+                command: command, windowFrame: current, screens: screens, gap: gap))
+        }
     }
 
     private func focusedWindow(of target: WindowTarget?) -> FocusedWindow? {

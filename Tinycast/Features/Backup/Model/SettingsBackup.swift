@@ -60,6 +60,8 @@ struct SettingsBackup: Codable {
         var menuSearchShowsAppleMenu: Bool?
         var windowManagementEnabled: Bool?
         var windowManagementShowInLauncher: Bool?
+        var windowThrowEnabled: Bool?
+        var windowThrowChord: String?
         var windowGap: Int?
         var windowCycle: String?
         var windowLayoutsShowInLauncher: Bool?
@@ -167,6 +169,8 @@ extension SettingsBackup {
             menuSearchShowsAppleMenu: s.menuSearchShowsAppleMenu,
             windowManagementEnabled: s.windowManagementEnabled,
             windowManagementShowInLauncher: s.windowManagementShowInLauncher,
+            windowThrowEnabled: s.windowThrowEnabled,
+            windowThrowChord: s.windowThrowChord.rawValue,
             windowGap: s.windowGap,
             windowCycle: s.windowCycle.rawValue,
             windowLayoutsShowInLauncher: s.windowLayoutsShowInLauncher,
@@ -445,6 +449,10 @@ extension SettingsBackup {
         if let flag = s.windowManagementShowInLauncher {
             settings.windowManagementShowInLauncher = flag
             count += 1
+        }
+        if let enabled = s.windowThrowEnabled { settings.windowThrowEnabled = enabled }
+        if let raw = s.windowThrowChord, let chord = WindowThrowGesture.Chord(rawValue: raw) {
+            settings.windowThrowChord = chord
         }
         if let gap = s.windowGap {
             settings.windowGap = gap

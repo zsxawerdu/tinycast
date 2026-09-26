@@ -399,6 +399,8 @@ enum SettingsSearchCatalog {
     ]
 
     private static let windowManagement: [SettingsSearchEntry] = [
+        .init(.windowManagementThrow, "Enable Throw a window", keywords: ["mouse", "gesture"]),
+        .init(.windowManagementThrow, "Hold shortcut", keywords: ["modifiers", "throw"]),
         .init(
             pane: .windowManagement,
             keywords: ["tile", "halves", "thirds", "maximize", "snap", "layouts", "arrangement"]),

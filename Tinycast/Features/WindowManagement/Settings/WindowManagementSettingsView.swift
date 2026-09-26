@@ -21,6 +21,7 @@ struct WindowManagementSettingsView: View {
 
             Group {
                 options
+                throwOptions
                 WindowLayoutsSection(
                     onEdit: { editor = WindowLayoutEditRequest(layout: $0) },
                     onDelete: { pendingDeletion = $0 })
@@ -55,6 +56,30 @@ struct WindowManagementSettingsView: View {
                     core.windowLayoutCoordinator.deleteWindowLayout(id: layout.id)
                 },
                 secondaryButton: .cancel())
+        }
+    }
+
+    private var throwOptions: some View {
+        @Bindable var settings = settings
+        return Section {
+            Toggle(isOn: $settings.windowThrowEnabled) {
+                SettingsRowTitle(.windowManagementThrow, "Enable Throw a window")
+            }
+            .onChange(of: settings.windowThrowEnabled) { _, enabled in
+                if enabled { _ = Permissions.ensureAccessibility() }
+            }
+            Picker(selection: $settings.windowThrowChord) {
+                ForEach(WindowThrowGesture.Chord.allCases) { chord in
+                    Text(chord.title).tag(chord)
+                }
+            } label: {
+                SettingsRowTitle(.windowManagementThrow, "Hold shortcut")
+            }
+            .settingsEnabled(settings.windowThrowEnabled)
+        } header: {
+            SettingsSectionHeader(.windowManagementThrow)
+        } footer: {
+            Text("Throw left or right for a half, up to maximize, or down to center. Release to apply. Escape cancels.")
         }
     }
 

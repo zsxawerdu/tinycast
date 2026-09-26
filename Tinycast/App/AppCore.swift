@@ -27,6 +27,8 @@ final class AppCore {
     let hotKeys = HotKeyManager()
     let hyperKeyTap = HyperKeyTap()
     let windowMover = WindowMover()
+    @ObservationIgnored private lazy var windowThrowMonitor = WindowThrowMonitor(
+        settings: settings, mover: windowMover)
     let spaceSwitcher = SpaceSwitcher()
     let inputSourceSwitcher = InputSourceSwitcher()
     let settings: AppSettings
@@ -326,6 +328,10 @@ final class AppCore {
             supportReminders.onDue = { [weak self] in self?.supportCoordinator.presentIfDue() }
             supportReminders.start()
 
+            windowThrowMonitor.isPaused = { [weak self] in
+                self?.hotKeys.modifierTapMonitor.isPaused ?? true
+            }
+            windowThrowMonitor.applySettings()
             hyperKeyTap.healthTicker = healthTicker
             hotKeys.modifierTapMonitor.healthTicker = healthTicker
             snippetListener.healthTicker = healthTicker
@@ -558,6 +564,12 @@ final class AppCore {
     // MARK: - Feature switches
 
     private func observeFeatureSwitches() {
+        track(
+            {
+                _ = $0.windowManagementEnabled
+                _ = $0.windowThrowEnabled
+                _ = $0.windowThrowChord
+            }, reproject: { $0.windowThrowMonitor.applySettings() })
         track(
             {
                 _ = $0.windowManagementEnabled

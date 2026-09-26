@@ -84,6 +84,8 @@ enum SettingsFileSchema {
                 WindowPlacementEngine.gapRange.contains($0) ? $0 : nil
             }
         case .windowCycle: return bind(settings, \.windowCycle)
+        case .windowThrowEnabled: return bind(settings, \.windowThrowEnabled)
+        case .windowThrowChord: return bind(settings, \.windowThrowChord)
         case .windowLayoutsShowInLauncher: return bind(settings, \.windowLayoutsShowInLauncher)
         case .windowRoomsShowInLauncher: return bind(settings, \.windowRoomsShowInLauncher)
         case .windowShortcuts: return windowManagement.commandShortcutsBinding(for: key)
@@ -128,6 +130,7 @@ extension CalcNumberStyle: SettingsFileRawValue {}
 extension SearchSensitivity: SettingsFileRawValue {}
 extension QuicklinkSelectionFallback: SettingsFileRawValue {}
 extension WindowCycle: SettingsFileRawValue {}
+extension WindowThrowGesture.Chord: SettingsFileRawValue {}
 extension ClipboardDefaultAction: SettingsFileRawValue {}
 extension EmojiSkinTone: SettingsFileRawValue {}
 extension EmojiGridColumns: SettingsFileRawValue {}
