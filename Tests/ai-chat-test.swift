@@ -1043,7 +1043,11 @@ struct AIChatTests {
         stage(removing)
         stage(removing)
         let beforeRemove = removing.stagingGeneration
-        expect(removing.removeLastAttachment(), "backspace takes the last staged image")
+        let last = removing.pendingAttachments.last?.id
+        removing.removeAttachment(last ?? UUID())
+        expect(
+            last != nil && removing.pendingAttachments.count == 1,
+            "a chip's remove button takes that staged image")
         expect(
             removing.stagingGeneration == beforeRemove,
             "taking one staged image back leaves another's decode on its way")

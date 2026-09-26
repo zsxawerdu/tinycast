@@ -74,7 +74,7 @@ final class AIChatCoordinator {
         window.show(chrome: AIChatWindowChrome(coordinator: self, chats: chats, find: find)) {
             AIChatSplitViewController(
                 sidebar: AIChatSidebarView().environment(self),
-                detail: AIChatDetailView().environment(self).environment(find))
+                detail: AIChatDetailView(host: .window).environment(self).environment(find))
         }
     }
 
@@ -577,7 +577,7 @@ final class AIChatCoordinator {
         modelTitle(of: model(for: chat), among: modelOptions)
     }
 
-    /// Shortened here, not by layout: a flexible label would take the row from the search field.
+    /// Shortened here, not by layout: a flexible label would push Send off Quick AI's narrow bar.
     func modelTitle(of selected: AIModelSelection?, among options: [AIModelOption]) -> String {
         guard let selected else { return "Choose Model" }
         let title = options.first { $0.matches(selected) }?.title ?? selected.model
@@ -587,28 +587,6 @@ final class AIChatCoordinator {
     }
 
     private static let maxModelTitleLength = 26
-
-    func selectedModelIcon(for chat: AIChatState) -> PopoverMenuIcon {
-        modelIcon(of: model(for: chat))
-    }
-
-    /// From the selection, not the loaded list: the list arrives after the picker first paints.
-    func modelIcon(of selected: AIModelSelection?) -> PopoverMenuIcon {
-        switch selected {
-        case .appleIntelligence?: return AIModelOption.appleIntelligenceIcon
-        case .codex?: return .asset(AIBrand.openAI.assetName)
-        case .claude?: return .asset(AIBrand.claude.assetName)
-        case .grok?: return .asset(AIBrand.x.assetName)
-        case .cursor?: return AIModelOption.cursorIcon
-        case .openCode(let model, _)?: return AIModelOption.icon(AIBrand.resolve(model: model))
-        case .api(let connection, let model, _)?:
-            return AIModelOption.icon(
-                core.aiSettings.connection(id: connection).flatMap {
-                    AIBrand.resolve(provider: $0.provider, model: model)
-                })
-        case nil: return AIModelOption.icon(nil)
-        }
-    }
 
     /// What entering chat costs once: the model list resolved, and the servers connected.
     func prepareForChat() {

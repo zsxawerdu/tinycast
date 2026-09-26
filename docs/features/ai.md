@@ -1,21 +1,23 @@
 # AI providers and chat
 
 Tinycast has one app-wide provider layer for features that need text generation. Chat chooses its
-model from Quick AI's header or the AI Chat composer, and `AIChatCoordinator.provider(for:)`
+model from the composer on either surface, and `AIChatCoordinator.provider(for:)`
 builds that chat's route through `AIProviderFactory` to stream an `AIRequest`.
 Chat is the first consumer and [Quick Actions](quick-actions.md) the second; the provider layer
 depends on neither, and Quick Actions carries its own route rather than borrowing this one.
 
-Chat has two surfaces over one history, as Raycast's does. **Quick AI** is the palette screen: Tab
-from the launcher asks what you typed, and the answer appears in place. **AI Chat** is a window —
-saved conversations in a sidebar on the left, the open one on the right, and a composer at the
-bottom with the model picker. ⌘J hands a Quick AI conversation to the window.
+Chat has two surfaces over one history. **Quick AI** is a floating composer bar that grows upward
+into a chat once it holds one, as ChatGPT's and Claude's companion bars do. **AI Chat** is a window —
+saved conversations in a sidebar on the left, the open one on the right. Both draw the same
+`AIChatDetailView`: the transcript with the composer under it. ⌘J hands a Quick AI conversation to
+the window.
 
 ## Invariants
 
 - **AI is off out of the box, and off means fully off.** `AppSettings.aiEnabled` is the flag:
   no `Quick AI` or `AI Chat` command in the launcher, no history database opened or created, no Codex
-  helper for chat, no stop for it on Tab's ring, the palette leaves `.ai` and the window closes.
+  helper for chat, no question for it from Tab, the Quick AI panel is torn down and the window
+  closes.
   Installed providers may still remain available for Quick Actions, which has its own switch and route. Turning AI off cancels
   every streaming reply and drops both transcripts, but touches neither the saved conversations in
   `ai-chats.sqlite3` nor a Keychain key. `aiEnabled` is excluded from settings backups like every
@@ -95,9 +97,8 @@ bottom with the model picker. ⌘J hands a Quick AI conversation to the window.
   fence out of the prose (an unclosed one mid-stream too, so it never flashes as code). Apple's
   on-device model tends to drop the fence and write a bare `choices` line over a list, so a
   label on its own line with nothing but list items after it, to the reply's end, counts too; and
-  `ChatSuggestionChips` draws the options as glass capsules: in the window they rise out of the
-  composer, sitting on its top edge until the reader starts typing; in Quick AI they close the
-  transcript. A click sends the option as the reader's next message, through the same `send` a
+  `ChatSuggestionChips` draws the options as glass capsules that rise out of the composer, sitting
+  on its top edge until the reader starts typing. A click sends the option as the reader's next message, through the same `send` a
   typed one takes. Older replies lose their chips, since only the last question is still open. It is text in, text out, so it
   works on every route — and not at all with the system prompt switched off, which drops the
   preamble that describes it.
@@ -197,25 +198,22 @@ bottom with the model picker. ⌘J hands a Quick AI conversation to the window.
   `threadId`, so a Stop ends only its own. The app-server's server list is fixed at launch, so a
   turn armed with a different one relaunches it and ends the other chats' live threads with a
   reason, rather than leaving them waiting on a process that is gone.
-- **Quick AI's lifetime is decided on the way in.** Pop to Root forgets the screen and the query;
-  whether the next summon resumes the transcript is Settings → AI's `Quick AI opens to`, applied in
-  `QuickAICoordinator.applyOpenPolicy` on the way into `.ai`. That used to be Pop to Root's job by
-  accident — it fires on every hide, so a chat never survived Escape — and deciding at open time from
-  a timestamp leaves one clock instead of two racing over the same state, and a verdict that still
-  holds after a relaunch. A reply still streaming is never reset out from under the reader — it was
+- **Quick AI's lifetime is decided on the way in.** Closing the panel resets nothing; whether the next
+  summon resumes the transcript is Settings → AI's `Quick AI opens to`, applied in
+  `QuickAICoordinator.applyOpenPolicy` when a hidden panel opens — never for one already up, which
+  the shortcut only refocuses. Deciding at open time from a timestamp leaves one clock rather than a
+  hide timer racing it, and a verdict that still holds after a relaunch. A reply still streaming is never reset out from under the reader — it was
   asked for — and the transcript is saved regardless, so the old conversation is one ⌘K → Chat
   History away, and in the window's sidebar. The window has no policy: it reopens on whatever it
   last showed.
 - **Arriving with a question skips the open policy entirely.** `ask(_:)` — ⇥ from the launcher, and
   the Quick AI fallback row — always starts a new chat and submits the text, because a question asked
   outright is not a summon: resuming a transcript to append an unrelated line to it would be the one
-  reading of `Quick AI opens to` nobody wants. It is `showPalette(mode: .ai)` and `send`, never
-  `show`.
-- **Staged files survive a re-summon; only the typed draft does not.** `applyOpenPolicy` treats a
-  pasted-but-unsent attachment as resident state: `Recent Conversation` will not open a saved chat
-  over one, and `A New Conversation` resets only a chat that actually has messages, since an empty
-  chat is already new and resetting it would drop the file for nothing. A file cost a read and a
-  decode, which is not the same as a half-typed line — that is still dropped by `prepare`.
+  reading of `Quick AI opens to` nobody wants. It is `present()` and `send`, never `show`.
+- **Staged files and the typed draft survive a re-summon.** Both live on `AIChatState`, and
+  `applyOpenPolicy` treats a pasted-but-unsent attachment as resident state: `Recent Conversation`
+  will not open a saved chat over one, and `A New Conversation` resets only a chat that actually has
+  messages, since an empty chat is already new and resetting it would drop the file for nothing.
   ⌘J carries them into the window with the conversation; opening another chat there still disowns
   a state's own, which is the rule they belong to.
 - **`AIConversationOpenPolicy` is the whole rule, and it is pure.** `Recent Conversation` resumes the
@@ -338,29 +336,26 @@ a debug description written for a log, so each case maps to a plain sentence ins
 
 ### Quick AI
 
-The built-in `Quick AI` launcher command enters `AIScreen`, and carries a bindable global shortcut
-(`HotKeyAction.command(.quickAI)`) that does the same thing from any app; Tab from the launcher is the
-third way in. Settings → AI holds the recorder and a checkbox for the command's place in launcher
-search, beside `AI Chat`'s; either shortcut keeps working while its command is hidden, and does
-nothing at all while the feature is off. The palette search field becomes the single-line composer.
-The footer pill and Return are one action, `activate`: Send, or Stop while a response streams — an
-empty composer sends nothing, so the pill never needs a disabled state. The header's trailing model
-switcher uses the same in-window menu control as Clipboard's type filter and changes the chat route
-for the next message. For installed routes and OpenRouter models whose catalog reports the
-capability, it also shows the supported reasoning efforts and changes the chat effort for the next
-message. Other API routes keep their provider default because their model catalogs expose no
-portable effort contract. Neither change interrupts a response already streaming; stopping one is
-the pill's job, so the header never has to fit a third control beside the switcher.
+The built-in `Quick AI` launcher command opens `QuickChatPanelController`'s panel, and carries a
+bindable global shortcut (`HotKeyAction.command(.quickAI)`) that does the same from any app; Tab from
+the launcher with text typed asks it, and the Quick AI fallback row does too. Settings → AI holds the
+recorder and a checkbox for the command's place in launcher search, beside `AI Chat`'s; either
+shortcut keeps working while its command is hidden, and does nothing at all while the feature is off.
+Opened over the palette, it closes the palette and returns focus to the app the palette covered.
 
-The second footer control is the palette's normal Actions (`⌘K`) menu. It owns Continue in AI Chat
-(`⌘J`; Open AI Chat while the chat is empty), New Chat (`⌘N`), Chat History (`⌘Y`) and AI Settings
-(`⌥⌘,`), plus Stop Response (`⌘.`), Regenerate Response (`⌘R`), Copy Last Response (`⇧⌘C`) and
-Remove Attachments when those apply. The chords are Raycast's where it has one, and `AIScreen.perform`
-maps each `PaletteShortcut` to its action. AI Settings takes ⌥⌘, because ⌘, stays the app's own
-Settings on every screen. Continuing closes the palette and carries the half-typed line into the
-window's composer with the conversation. Chat History is the palette's own browser over the same
-saved chats the window's sidebar lists: ↵ opens one in Quick AI, or in the window when the window
-already holds it, and Continue in AI Chat (`⌘J`) takes it to the window either way.
+The panel is a borderless, non-activating `NSPanel` at `.floating` level on every Space, so a chat is
+worked beside another app without Tinycast activating. Unlike the palette it does not hide when it
+loses focus: ⎋, ⌘W, the header's ✕ or a second press of the shortcut while it holds focus closes it,
+and a press while another app has focus brings it back. It opens as the composer alone, measured from
+its own height, and grows to `Size.quickChatPanel` once there is a transcript, a notice or an
+unavailable route to show — upward, keeping the composer where it sat. It opens above the Dock on the
+screen with the pointer, and dragging the header, the composer's top inset or the empty space between its controls moves it.
+The composer's bottom-centre position is saved across relaunches, independently for each app channel;
+a missing display falls back to the screen with the pointer. The grown panel's header holds New Chat and Continue in AI Chat, and a switcher above
+the composer names the open chat and lists recent ones: one the window holds opens there instead,
+and All Chats opens the window. Its key monitor answers the window's chords — New Chat (`⌘N`),
+Continue in AI Chat (`⌘J`), Regenerate (`⌘R`), Copy Last Response (`⇧⌘C`), Stop (`⌘.`), AI Settings
+(`⌥⌘,`) and ⌘V for files.
 
 ### AI Chat
 
@@ -393,7 +388,7 @@ menu's own chords, and dies with the window.
   and tool rows stay separate views, so a drag spans one segment's text. A fold holding a match
   opens. A glass counter at the transcript's top edge says "3 of 17" with the same steps as
   Return / ⇧↩ in the field and ⌘G / ⇧⌘G anywhere. The sidebar's own filter is still there, by click.
-- **Actions** (⌘K): Quick AI's ⌘K menu for a window, on the same chords — Stop Response (`⌘.`), New
+- **Actions** (⌘K): the chords Quick AI's panel answers, as a menu — Stop Response (`⌘.`), New
   Chat (`⌘N`), Regenerate (`⌘R`), Copy Last Response (`⇧⌘C`), Remove Attachments, Find in Chat
   (`⌘F`) and AI Settings (`⌥⌘,`) — plus what only a saved chat has: Copy Chat, Pin and Delete.
   `AIChatActionsMenu` builds it per open from the chat's state, as an `NSMenu` hung under the
@@ -408,21 +403,26 @@ menu's own chords, and dies with the window.
   The context menu pins, renames in place, copies or exports the chat as Markdown
   (`ChatSession.markdownTranscript`), and deletes one or all through `DialogController`; ⌫ deletes
   the selected chat the same way.
-- **Transcript**: `ChatTranscriptView` with `surface: .window`, which drops the palette's edge
-  dissolve and thin scrollbar (both are measured against the palette's bars) and centres the column
-  at `aiChatReadingWidth`. The last finished reply offers Regenerate beside Copy: `AIChatState`
+- **Transcript**: `ChatTranscriptView`, which scrolls natively rather than with the palette's edge
+  dissolve and thin scrollbar and centres the column at `aiChatReadingWidth`. The last finished reply offers Regenerate beside Copy: `AIChatState`
   drops only a trailing reply and asks again with the question and its attachments, of whichever
   model is selected now.
-- **Composer** (`AIChatDetailView`): one pane of untinted Liquid Glass, stacked under the transcript
-  rather than floated over it, with glass capsules for its menus, the glass on a background layer.
+- **Composer** (`AIChatDetailView`, both surfaces): one pane of untinted Liquid Glass, stacked under
+  the transcript rather than floated over it, the glass on a background layer. Quick AI's bare bar
+  drops the glass and uses the panel's nearly opaque adaptive charcoal surface. Its compact composer
+  is 462 points wide, with a 40-point minimum text area, 16-point insets and a 28-point blue Send circle.
   The title bar keeps the system's own band, as a native document window's does.
   Transcript text runs `spacing.chatLine` apart, both surfaces. `ChatComposerTextView` is an `NSTextView`, not a `TextEditor`: its delegate sees
   `insertNewline:` only outside input-method composition, so Return sends and ⇧↩ or ⌥↩ breaks the
   line without Return ever stealing an IME's confirm. It grows with its text to
-  `aiChatComposerMaxHeight`, then scrolls. Under it: the paperclip (an `NSOpenPanel`), the model
-  menu, the reasoning menu (always shown, disabled for a model with no efforts, so the row never
-  changes shape), a web-search toggle when the route offers search, a context gauge, and Send/Stop.
-  One paperclip takes every kind; its help names what this chat's model can read. The gauge is the
+  `aiChatComposerMaxHeight`, then scrolls. Under it: **+** (an `NSOpenPanel`) and the tools menu on
+  the left; on the right the model menu — the model's name with its reasoning effort beside it, and
+  the efforts as a section of the same menu in the window. Quick AI instead shows the model and
+muted effort in a capsule; its card places the effort and a trailing chevron above the model name,
+with a stepped effort slider and a reset-to-model-default button. Clicking the two-line heading opens
+the model list. Models without effort options omit the slider. Then ··· (web search when the route offers it, and AI
+  Settings), a context gauge, and Send/Stop. One **+** takes every kind; its help names what this
+  chat's model can read. The gauge is the
   last reply's `contextTokens` against the model's window when the route reported one, and
   `ChatSession.historyBytes` against Tinycast's history budget otherwise — orange from 80%, red at
   100%. Hovering it raises Tinycast's own card (never a popover), drawn inside the transcript's
@@ -430,7 +430,7 @@ menu's own chords, and dies with the window.
   solid under its glass so the transcript cannot show through. `ChatContextReport`
   lays it out: tokens in context of the window, input with its cached share, output with its
   thinking share and cost; then what the next message sends — model, history of budget, messages
-  sent of total, staged files, and whether the system prompt, web search and tools ride along. The model and reasoning menus are this chat's, as Quick AI's header is Quick AI's. Files arrive by ⌘V, a drop anywhere on the pane, or the paperclip, and all three take
+  sent of total, staged files, and whether the system prompt, web search and tools ride along. The model menu is this chat's, on either surface. Files arrive by ⌘V, a drop anywhere on the pane, or **+**, and all three take
   the refusals a paste does. The unsent text lives on `AIChatState.draft`, so it survives closing
   the window.
 
@@ -438,7 +438,7 @@ menu's own chords, and dies with the window.
 shown without entering the transcript, partial text is preserved on failure, cancellation invalidates
 the active generation, and only completed assistant messages become context for the next request.
 Assistant replies render Markdown; user messages remain literal. A reply keeps streaming while the
-palette is hidden, the window is closed or showing another chat — the state is `AppCore`'s, not the
+Quick AI panel is closed, the window is closed or showing another chat — the state is `AppCore`'s, not the
 view's — and is saved when it finishes.
 
 Tool activity persists in `message_tools` beside `message_searches`, and `ChatMessage.segments`
@@ -456,37 +456,17 @@ streaming gets.
 It uses the system SQLite already linked by Tinycast, stores no provider credentials, and repairs a
 reply left streaming by a prior process into an interrupted failure when loaded.
 
-## Palette integration
+## Model marks
 
-Two palette modes carry Quick AI, and neither changes the shell's rules:
-
-| Mode | Screen | Body |
-| --- | --- | --- |
-| `.ai` | `AIScreen` | `ChatTranscriptView` (`surface: .palette`) |
-| `.aiHistory` | `ChatHistoryScreen` | `ChatHistoryList` + preview, bucketed by day like Clipboard |
-
-Chat History backs out to Quick AI; both are sub-screens, so the header shows the back chevron.
 Quick AI keeps the `command:ai-chat` id it shipped with while it was the only chat, so a hotkey,
 alias or fallback order recorded then still reaches it with nothing migrated; the window's command
-is the new id. The search field is the composer: Return submits, or stops a streaming response, and the footer pill
-reads Send `↵` / Stop `↵` to match. The model switcher is a `HeaderMenuButton` — the
-active label, glyph and disclosure chevron layered over `BarButton` — which is also what Clipboard's
-type filter is now, so the two header menus hover and open identically. Its menu is the palette's
-fourth `OpenMenu` case, `.topTrailing` like the type filter, and it opens on the selected model. Each
-row leads with the vendor's mark — `AIBrand` resolves it from a native connection's provider, or for
-OpenRouter and OpenAI-compatible endpoints from the model id (`anthropic/claude-…`, `deepseek-chat`,
-`o4-mini`). The marks are ~300 B–2 KB monochrome template SVGs in `Assets.xcassets` (`AIBrand*`),
-twelve from Simple Icons and Z.ai from `@lobehub/icons`, so they tint with the row like a symbol; an
-unrecognised model keeps the generic sparkle. Provenance, the MIT notice and the trademark position
-are recorded in [`NOTICE.md`](../../NOTICE.md) — the CC0 on the Simple Icons project does not extend
-to the brands it depicts. The header's model switcher shows the selected model's mark the same way.
-
-The palette's click-away catcher is mounted permanently and only toggles `allowsHitTesting` with the
-open menu. Inserting it on open and removing it on close could strand SwiftUI's hover target on the
-header button underneath — AppKit kept delivering clicks, but neither the button nor the catcher saw
-them until an unrelated render or a window exit/re-enter recomputed hover. It dismisses on a
-`DragGesture(minimumDistance: 0)` rather than a tap, so a press that drifts a few points still closes
-the menu, as a native menu's click-away does.
+is the new id. Each model menu row leads with the vendor's mark — `AIBrand` resolves it from a native
+connection's provider, or for OpenRouter and OpenAI-compatible endpoints from the model id
+(`anthropic/claude-…`, `deepseek-chat`, `o4-mini`). The marks are ~300 B–2 KB monochrome template
+SVGs in `Assets.xcassets` (`AIBrand*`), twelve from Simple Icons and Z.ai from `@lobehub/icons`, so
+they tint with the row like a symbol; an unrecognised model keeps the generic sparkle. Provenance,
+the MIT notice and the trademark position are recorded in [`NOTICE.md`](../../NOTICE.md) — the CC0
+on the Simple Icons project does not extend to the brands it depicts.
 
 Seven more `@MainActor @Observable` types join the shared state: `AISettingsStore`,
 `ChatGPTSubscriptionManager`, `InstalledAIManager`, `ChatHistoryStore`, `AIChatSurfacesState` (which
@@ -496,14 +476,8 @@ window, and every chat action either surface sends — is the nineteenth feature
 
 ### Manual sweep
 
-- The selected model appears at the right of the composer and truncates without crowding typed text.
-- An `@server` chip — the tools glyph alone, since the handle is still in the text — or a staged
-  pill follows the typed text with a clear gap, and a long draft stops it right before the model
-  name, the same gap with a reasoning menu and without.
-- Clicking it opens the same anchored menu shape as Clipboard's type filter; arrows, Return and Escape
-  operate the menu without changing the draft.
-- Repeatedly clicking either the model switcher or the type filter opens and closes every time, even
-  when the next click lands immediately after dismissal or a few points off the first one.
+- The selected model and its effort sit at the right of the composer, in Quick AI's narrow bar too.
+- An `@server` chip or a staged file shows above the typed text, and its ✕ takes back that one file.
 - Selecting a model updates the button immediately and the next message reaches that route.
 - Switching while a response streams does not stop or reroute that response; the new model applies to
   the following message.
@@ -662,10 +636,10 @@ is why documents are *not* assumed the way images are. An attachment is never dr
 out: answering a question about a document the model never received is the one outcome this must
 not produce.
 
-In Quick AI attachments arrive by ⌘V; the window also takes a drop and the paperclip. They come in
+Attachments arrive by ⌘V, a drop or **+** on either surface. They come in
 three kinds: an **image**, a **PDF** sent as a native document block,
 and a **text-ish file** whose contents are inlined as fenced, named text.
-`PaletteWindowController`'s command-shortcut hook gives chat the chord first; a pasteboard holding
+Each surface's key monitor gives chat ⌘V first; a pasteboard holding
 file URLs or a bare image (a screenshot) stages them, while anything else carrying text falls
 through to the field editor as a normal paste. **Only `isFileURL` URLs are read** — without that
 filter a copied `https://…/a.png` reaches `Data(contentsOf:)`, turning a keystroke into a network
@@ -695,43 +669,21 @@ images' lifetime exactly: whatever consumes or clears them — a send, a new cha
 or leaving the conversation for another in the window — disowns one still in flight and says so,
 rather than letting it surface on a later message. The counter that decides this sits on
 `AIChatState` beside the staged images, so a route that drops them cannot forget to move it.
-**Staged attachments share one pill beside the typed text**: the newest one's kind as a glyph — a
-photo, a PDF, a text file — and `+N` for the rest, because the strip's width is taken out of the
-search field and a named pill per file left too little room to read what you are typing. The names
-are a hover away, one per line, and clicking the pill opens a header menu listing every file, an
-image by its own thumbnail, with its ✕, so a mispaste is taken back without clearing the rest — ⌘K → Remove Attachments
-and bare backspace stay as the bulk and last-one routes. A row runs by its index, so the open menu
-is re-laid whenever the staged list changes and closes once it empties; left stale, a file decoded
-under it would shift the rows, and clicking Remove All would take back only that file. The menu's
-thumbnail is the ~1 KB PNG downsampled on the same detached task that encodes the attachment and
-carried on the staged attachment itself, decoded once per row, so there is no cache whose lifetime
-could drift from the staging counter's. The strip states its own width — `AttachmentsPill.width(for:)`, the `@`
-chip's, and every gap it lays out, the one between the two chips included — which
-`RootPaletteView.searchFieldWidth(for:)` subtracts from the search field, so they must move together
-or the caret drifts. Pills ride the same `headerAccessory` the launcher's argument fields use, so the field shrinks to
-its text and the chip follows it rather than the composer growing. Nothing is reserved for the model
-menu: the row itself squeezes a long draft, so the strip stops right before that menu however wide
-its title is. Bare backspace on an empty composer removes the last
-chip before it backs out of chat; ⌘K → Remove Attachments clears them all. Sent images persist in `message_images` and sent PDFs in `message_documents` beside their message;
+**Staged attachments are chips above the typed text**, an image by its own thumbnail — the ~1 KB
+PNG downsampled on the same detached task that encodes the attachment and carried on the staged
+attachment itself, so there is no cache whose lifetime could drift from the staging counter's. Each
+chip's ✕ takes back one file without clearing the rest. Sent images persist in `message_images` and sent PDFs in `message_documents` beside their message;
 the bubble renders images as thumbnails and documents as named chips.
 A text file is already in the message's text and needs no table. The schema is
 `CREATE TABLE IF NOT EXISTS` re-applied on every open, so the table needed no migration, and its
 `ON DELETE CASCADE` leaves `prune` unchanged.
 
-The switcher's glyph comes from the selection. Codex uses OpenAI's mark; Claude and Grok use their own
-marks; OpenCode resolves a brand from the model id or falls back to a sparkle; Cursor uses an SF Symbol;
-an API model resolves through its connection. It never depends on `modelOptions`, which for
-Codex is empty until the app-server has answered `model/list`; opening the chat on a Codex model warms that list so the title is the
-display name from the first frame. Tab hands Quick AI on to the clipboard, and Escape on an empty
-composer takes its own back step — to whatever opened it, or out of the palette when its hotkey
-did; either way the unsent draft is dropped rather than carried into a field that would search it.
-History is pushed over Quick AI and pops back to it, and Tab carries its query to the launcher
-because there the field really is a search. Neither exit touches the conversation: it lives on
-`AIChatState`, so Tab away and back resumes the same transcript.
+Opening a chat on a Codex model warms `model/list`, which is empty until the app-server answers,
+so the model menu's title is the display name from the first frame.
 
-The model switcher is `fixedSize` with its title shortened in `AIChatCoordinator` (26 characters,
-middle ellipsis) rather than truncated by layout: a flexible label claimed the row up to its max
-width and clipped the search field well short of the button.
+The model menu is `fixedSize` with its title shortened in `AIChatCoordinator` (26 characters,
+middle ellipsis) rather than truncated by layout, so a long model name cannot push Send off Quick
+AI's narrow bar.
 
 ## Settings and backup boundary
 
@@ -741,7 +693,7 @@ it picks the app-wide route and its reasoning effort. Provider management opens 
 **Installed AI** reports Codex, Claude, Grok, OpenCode and Cursor separately as checking, ready, sign-in required,
 missing or failed. It never contains a credential field: installation and sign-in happen in each
 command's own flow. **API Connections** remains the explicit Keychain-backed path in that sheet. A
-pick in Quick AI's header or the AI Chat composer sets that chat's model and moves this default with
+pick in either composer sets that chat's model and moves this default with
 it, while Quick Actions keeps its own model selection.
 
 The signed-in Codex address is the one thing on the pane that names a person, and a Settings pane

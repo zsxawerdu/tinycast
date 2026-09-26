@@ -136,14 +136,11 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Read once here: ⌘V is a keystroke path, and both routes want the same answer.
+    /// A file pasted at the launcher opens Quick AI with it; anywhere else ⌘V pastes as usual.
     private func attachPastedFile() -> Bool {
-        let files = PasteboardFiles.urls(on: .general)
-        switch core.palette.mode {
-        case .ai: return core.quickAICoordinator.attachPastedFile(files: files)
-        case .launcher: return core.quickAICoordinator.attachPastedFileFromLauncher(files: files)
-        default: return false
-        }
+        guard core.palette.mode == .launcher else { return false }
+        return core.quickAICoordinator.attachPastedFileFromLauncher(
+            files: PasteboardFiles.urls(on: .general))
     }
 
     func hide(restoreFocus: Bool) {
@@ -383,9 +380,6 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
             if core.palette.isEditingField { return false }
             if core.palette.mode == .extensionCommand {
                 core.extensionCoordinator.exitExtensionScreen()
-                return true
-            }
-            if core.palette.mode == .ai, core.quickAICoordinator.removeLastAttachment() {
                 return true
             }
             if core.palette.pop() { return true }

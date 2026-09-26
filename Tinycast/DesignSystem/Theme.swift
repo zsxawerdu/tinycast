@@ -17,8 +17,6 @@ enum Theme {
         static let xxxl: CGFloat = 28
         /// Gap under a category header, shared by every palette list's `SectionHeader`.
         static let sectionHeaderBottom: CGFloat = 4
-        /// Clearance under the last message, so its actions row belongs to it, not to the footer.
-        static let chatTranscriptBottom: CGFloat = 28
         /// A stream grows the transcript as the reader descends, so an exact-bottom test runs away.
         static let chatFollowTailSlack: CGFloat = 44
         /// Extra leading between a transcript's lines, so a long reply reads as paragraphs.
@@ -217,6 +215,14 @@ enum Theme {
         static let aiChatReadingWidth: CGFloat = 760
         /// The composer grows with its text up to this, then scrolls inside itself.
         static let aiChatComposerMaxHeight: CGFloat = 180
+        /// Quick AI opens as its composer alone and grows to this once it holds a chat.
+        static let quickChatPanel = CGSize(width: 462, height: 640)
+        static let quickChatComposerTextHeight: CGFloat = 40
+        static let quickChatComposerInset: CGFloat = 16
+        static let quickChatModelPickerWidth: CGFloat = 250
+        static let quickChatSendDiameter: CGFloat = 28
+        static let quickChatSendSymbol: CGFloat = 16
+        static let quickChatHeader: CGFloat = 44
         static let chatContextGauge: CGFloat = 14
         /// A source chip's title before it middle-truncates, so three chips share a row.
         static let chatSourceTitle: CGFloat = 200
@@ -405,6 +411,8 @@ enum Theme {
 
         /// The ramp's inverse: the scrim darkens the dark surface and lightens the light one.
         static let panelScrim = adaptive(dark: .srgbInk(0, alpha: 0.40), light: .srgbInk(1, alpha: 0.55))
+        static let quickChatSurface = adaptive(
+            dark: .srgbInk(0.075, alpha: 0.98), light: .srgbInk(0.96, alpha: 0.98))
         /// Modal separation inside Tinycast: the launcher recedes while its dialog is in front.
         static let dialogDimming = adaptive(
             dark: .srgbInk(0, alpha: 0.34), light: .srgbInk(0, alpha: 0.34))

@@ -203,14 +203,13 @@ final class AppCore {
         paletteCoordinator: paletteCoordinator, core: self)
     @ObservationIgnored private(set) lazy var mcpCoordinator = MCPCoordinator(
         settings: settings, store: mcpSettings, manager: mcp, core: self)
-    /// Its own window and lifecycle, like Settings; Quick AI is the palette's half of the feature.
+    /// Its own window and lifecycle, like Settings; Quick AI is the floating panel's half.
     @ObservationIgnored private(set) lazy var aiChatCoordinator = AIChatCoordinator(
         chats: aiChats, settings: settings, appIndex: appIndex,
         paletteCoordinator: paletteCoordinator, settingsCoordinator: settingsCoordinator,
         core: self)
     @ObservationIgnored private(set) lazy var quickAICoordinator = QuickAICoordinator(
-        chats: aiChats, settings: settings, palette: palette,
-        paletteCoordinator: paletteCoordinator, core: self)
+        chats: aiChats, settings: settings, paletteCoordinator: paletteCoordinator, core: self)
 
     @ObservationIgnored private lazy var windowController = PaletteWindowController(core: self)
     @ObservationIgnored private lazy var messageHUD = MessageHUDController(settings: settings)

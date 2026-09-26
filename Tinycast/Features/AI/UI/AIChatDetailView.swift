@@ -1,14 +1,30 @@
 import AppKit
 import SwiftUI
 
-/// The window's right-hand side: the open conversation, and its composer beneath it.
+/// Which surface a detail view serves; each shows its own live chat.
+enum AIChatHost {
+    case window
+    case quickChat
+}
+
+/// The open conversation, and its composer beneath it: the window's right-hand side, or Quick AI.
 struct AIChatDetailView: View {
     @Environment(AIChatCoordinator.self) private var coordinator
     @Environment(ChatFindState.self) private var find
     @State private var isDropTargeted = false
     @State private var showsContext = false
+    let host: AIChatHost
+    /// Quick AI is its composer alone until there is something to show above it.
+    var showsTranscript = true
+    /// Rides on the composer's top edge, where Quick AI keeps its chat switcher.
+    var composerHeader: AnyView?
 
-    private var chat: AIChatState { coordinator.chats.window }
+    private var chat: AIChatState {
+        host == .window ? coordinator.chats.window : coordinator.chats.quickAI
+    }
+
+    /// The window keeps a reading column; Quick AI is already narrower than one.
+    private var gutter: CGFloat { host == .window ? Theme.Spacing.xxl : Theme.Spacing.md }
 
     /// The last reply's options, once it has finished; typing or sending moves past them.
     private var suggestions: [String] {
@@ -21,35 +37,39 @@ struct AIChatDetailView: View {
     var body: some View {
         // Stacked, not floated: the transcript ends where the composer begins, never beneath it.
         VStack(spacing: 0) {
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // In the transcript's own frame, so the card can never leave the window.
-                .overlay(alignment: .bottom) {
-                    if showsContext {
-                        HStack {
-                            Spacer(minLength: 0)
-                            ContextCard(report: coordinator.contextReport(for: chat))
+            if showsTranscript {
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // In the transcript's own frame, so the card can never leave the window.
+                    .overlay(alignment: .bottom) {
+                        if showsContext {
+                            HStack {
+                                Spacer(minLength: 0)
+                                ContextCard(report: coordinator.contextReport(for: chat))
+                            }
+                            .frame(maxWidth: Theme.Size.aiChatReadingWidth)
+                            .padding(.horizontal, gutter)
+                            .padding(.bottom, Theme.Spacing.sm)
+                            .transition(.opacity)
+                            .allowsHitTesting(false)
                         }
-                        .frame(maxWidth: Theme.Size.aiChatReadingWidth)
-                        .padding(.horizontal, Theme.Spacing.xxl)
-                        .padding(.bottom, Theme.Spacing.sm)
-                        .transition(.opacity)
-                        .allowsHitTesting(false)
                     }
-                }
+            }
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                if showsTranscript, let composerHeader { composerHeader }
                 if !suggestions.isEmpty, chat.draft.isEmpty {
                     ChatSuggestionChips(choices: suggestions) { coordinator.send($0, in: chat) }
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 AIChatComposer(
                     chat: chat, coordinator: coordinator, settings: coordinator.aiSettings,
+                    surface: composerSurface, usesQuickModelPicker: host == .quickChat,
                     showsContext: $showsContext)
             }
             .frame(maxWidth: Theme.Size.aiChatReadingWidth)
-            .padding(.horizontal, Theme.Spacing.xxl)
-            .padding(.bottom, Theme.Spacing.xxl)
-            .padding(.top, Theme.Spacing.sm)
+            .padding(.horizontal, showsTranscript ? gutter : 0)
+            .padding(.bottom, showsTranscript ? gutter : 0)
+            .padding(.top, showsTranscript ? Theme.Spacing.sm : 0)
             .animation(.snappy, value: suggestions)
             .animation(.snappy, value: chat.draft.isEmpty)
         }
@@ -65,6 +85,11 @@ struct AIChatDetailView: View {
         }
     }
 
+    /// Standing alone, Quick AI's composer is the panel, whose own glass it would only double.
+    private var composerSurface: AIChatComposer.Surface {
+        host == .quickChat && !showsTranscript ? .bare : .glass
+    }
+
     @ViewBuilder private var content: some View {
         if chat.session.messages.isEmpty {
             // Read in the body, so a CLI signing in or a provider switched on is seen at once.
@@ -77,7 +102,6 @@ struct AIChatDetailView: View {
             let occurrences = find.occurrences(in: chat.session.messages)
             ChatTranscriptView(
                 messages: chat.session.messages, status: chat.liveStatus, usage: chat.usage,
-                surface: .window,
                 onRegenerate: chat.isStreaming ? nil : { coordinator.regenerate(in: chat) },
                 find: find.isSearching
                     ? ChatFindHighlight(
@@ -114,9 +138,16 @@ struct AIChatDetailView: View {
 
 /// Staged files, the text, then the chat's options and Send, on one pane of Liquid Glass.
 private struct AIChatComposer: View {
+    enum Surface {
+        case glass
+        case bare
+    }
+
     let chat: AIChatState
     let coordinator: AIChatCoordinator
     let settings: AISettingsStore
+    let surface: Surface
+    let usesQuickModelPicker: Bool
     @Binding var showsContext: Bool
 
     private var canSend: Bool {
@@ -141,12 +172,23 @@ private struct AIChatComposer: View {
                 }
                 ChatComposerTextView(text: $chat.draft, focusKey: chat.session.id, onSubmit: submit)
             }
+            .frame(minHeight: usesQuickModelPicker ? Theme.Size.quickChatComposerTextHeight : nil,
+                   alignment: .topLeading)
             controls
         }
-        .padding(Theme.Spacing.xl)
+        .padding(usesQuickModelPicker ? Theme.Size.quickChatComposerInset : Theme.Spacing.xl)
+        .overlay(alignment: .top) {
+            if usesQuickModelPicker {
+                Color.clear
+                    .frame(height: Theme.Spacing.xl)
+                    .windowDraggable(true)
+            }
+        }
         .background {
-            Color.clear.glassEffect(
-                .regular, in: RoundedRectangle(cornerRadius: Theme.Radius.dialog, style: .continuous))
+            if surface == .glass {
+                Color.clear.glassEffect(
+                    .regular, in: RoundedRectangle(cornerRadius: Theme.Radius.dialog, style: .continuous))
+            }
         }
     }
 
@@ -170,21 +212,28 @@ private struct AIChatComposer: View {
     }
 
     private var controls: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            ComposerIconButton(symbol: "paperclip", help: attachHelp) {
+        HStack(spacing: usesQuickModelPicker ? Theme.Spacing.sm : Theme.Spacing.md) {
+            ComposerIconButton(symbol: "plus", help: attachHelp) {
                 coordinator.chooseFiles(for: chat)
             }
-            AIModelPicker(chat: chat, selected: coordinator.model(for: chat), coordinator: coordinator)
-            AIReasoningPicker(chat: chat, coordinator: coordinator)
             AIToolsPicker(chat: chat, coordinator: coordinator)
-            if coordinator.capabilities(for: chat).webSearch {
-                WebSearchToggle(settings: settings)
+            Spacer(minLength: usesQuickModelPicker ? 0 : Theme.Spacing.xl)
+                .frame(minHeight: Theme.Size.barButtonHeight)
+                .windowDraggable(usesQuickModelPicker)
+            if usesQuickModelPicker {
+                QuickAIModelPicker(chat: chat, coordinator: coordinator)
+                    .id(chat.session.id)
+            } else {
+                AIModelPicker(chat: chat, selected: coordinator.model(for: chat), coordinator: coordinator)
             }
-            Spacer(minLength: 0)
+            ComposerMoreMenu(
+                settings: settings, webSearch: coordinator.capabilities(for: chat).webSearch,
+                onSettings: coordinator.showSettings)
             ContextGauge(
                 report: coordinator.contextReport(for: chat, detailed: false), hovered: $showsContext)
             sendButton
         }
+        .font(.title3)
     }
 
     /// One paperclip for every kind; what this chat's model can read is what the help says.
@@ -200,10 +249,22 @@ private struct AIChatComposer: View {
 
     private var sendButton: some View {
         Button(action: submit) {
-            Image(systemName: chat.isStreaming ? "stop.circle.fill" : "arrow.up.circle.fill")
-                .font(.title2)
-                .symbolRenderingMode(.hierarchical)
-                .contentTransition(.symbolEffect(.replace))
+            if usesQuickModelPicker {
+                SymbolImage(
+                    name: chat.isStreaming ? "stop.fill" : "arrow.up",
+                    size: Theme.Size.quickChatSendSymbol, monochrome: true)
+                    .foregroundStyle(
+                        chat.isStreaming || canSend ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
+                    .frame(width: Theme.Size.quickChatSendDiameter, height: Theme.Size.quickChatSendDiameter)
+                    .background(
+                        Theme.Colors.primaryAction.opacity(chat.isStreaming || canSend ? 1 : 0.4),
+                        in: Circle())
+            } else {
+                Image(systemName: chat.isStreaming ? "stop.circle.fill" : "arrow.up.circle.fill")
+                    .font(.title)
+                    .symbolRenderingMode(.hierarchical)
+                    .contentTransition(.symbolEffect(.replace))
+            }
         }
         .buttonStyle(.borderless)
         .disabled(!chat.isStreaming && !canSend)
@@ -236,7 +297,7 @@ private struct ComposerIconButton: View {
     }
 }
 
-/// Every configured model, grouped by where it runs; the pick belongs to this chat.
+/// Every configured model, grouped by where it runs, then its reasoning efforts; the pick is this chat's.
 private struct AIModelPicker: View {
     let chat: AIChatState
     /// Handed in, never read from `chat`: a reply writes the session on every streaming flush.
@@ -245,6 +306,7 @@ private struct AIModelPicker: View {
 
     var body: some View {
         let groups = coordinator.modelGroups
+        let efforts = coordinator.reasoningEfforts(for: chat)
         Menu {
             if coordinator.isModelCatalogLoading {
                 Text("Loading models…")
@@ -266,48 +328,35 @@ private struct AIModelPicker: View {
                     }
                 }
             }
+            if !efforts.isEmpty {
+                Section("Reasoning") {
+                    ForEach(efforts, id: \.id) { effort in
+                        Toggle(
+                            effort.title,
+                            isOn: Binding(
+                                get: { selected?.effort == effort.id },
+                                set: { if $0 { coordinator.selectReasoningEffort(effort, in: chat) } }))
+                    }
+                }
+            }
             if groups.isEmpty, !coordinator.isModelCatalogLoading {
                 Button("Configure AI…", action: coordinator.showSettings)
             }
         } label: {
-            Label {
+            HStack(spacing: Theme.Spacing.xs) {
                 Text(coordinator.modelTitle(of: selected, among: groups.flatMap(\.options)))
-            } icon: {
-                MenuIconImage(icon: coordinator.modelIcon(of: selected))
+                if !efforts.isEmpty {
+                    Text(coordinator.selectedReasoningTitle(for: chat))
+                        .foregroundStyle(.secondary)
+                }
             }
-            .labelStyle(.titleAndIcon)
+            .font(.body)
         }
-        .composerPill()
-        .help("Switch this chat's model")
-    }
-}
-
-private struct AIReasoningPicker: View {
-    let chat: AIChatState
-    let coordinator: AIChatCoordinator
-
-    /// Shown even when the model has no efforts, so the row never changes shape under the reader.
-    var body: some View {
-        let efforts = coordinator.reasoningEfforts(for: chat)
-        let selected = coordinator.model(for: chat)?.effort
-        Menu {
-            ForEach(efforts, id: \.id) { effort in
-                Toggle(
-                    effort.title,
-                    isOn: Binding(
-                        get: { selected == effort.id },
-                        set: { if $0 { coordinator.selectReasoningEffort(effort, in: chat) } }))
-            }
-        } label: {
-            Label(
-                efforts.isEmpty ? "Reasoning" : coordinator.selectedReasoningTitle(for: chat),
-                systemImage: "brain"
-            )
-            .labelStyle(.titleAndIcon)
-        }
-        .composerPill()
-        .disabled(efforts.isEmpty)
-        .help(efforts.isEmpty ? "This model has no reasoning setting" : "Change reasoning effort")
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
+        .menuIndicator(.visible)
+        .fixedSize()
+        .help("Switch this chat's model and reasoning")
     }
 }
 
@@ -347,11 +396,15 @@ private struct AIToolsPicker: View {
         } label: {
             Label(
                 servers.isEmpty || !scope.isEnabled ? "Tools" : "\(active) of \(servers.count)",
-                systemImage: "wrench.and.screwdriver"
+                systemImage: scope.isEnabled && active > 0
+                    ? "wrench.and.screwdriver.fill" : "wrench.and.screwdriver"
             )
-            .labelStyle(.titleAndIcon)
+            .labelStyle(.iconOnly)
         }
-        .composerPill()
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
+        .menuIndicator(.hidden)
+        .fixedSize()
         .disabled(!takesTools)
         .help(
             takesTools
@@ -394,19 +447,30 @@ private struct FindCounter: View {
     }
 }
 
-/// The same switch as Settings → AI's: a prompt reaches a search engine only once it is on.
-private struct WebSearchToggle: View {
+/// The chat's less-used switches. Web search is the same one Settings → AI holds.
+private struct ComposerMoreMenu: View {
     let settings: AISettingsStore
+    /// False for a model that cannot search, which leaves the switch out rather than inert.
+    let webSearch: Bool
+    let onSettings: () -> Void
 
     var body: some View {
         @Bindable var settings = settings
-        Toggle(isOn: $settings.webSearchEnabled) {
-            Image(systemName: "globe")
+        Menu {
+            if webSearch {
+                Toggle("Search the Web", systemImage: "globe", isOn: $settings.webSearchEnabled)
+                Divider()
+            }
+            Button("AI Settings…", systemImage: "gearshape", action: onSettings)
+        } label: {
+            Label("More", systemImage: "ellipsis")
+                .labelStyle(.iconOnly)
         }
-        .toggleStyle(.button)
+        .menuStyle(.button)
         .buttonStyle(.borderless)
-        .help(settings.webSearchEnabled ? "Web search is on" : "Web search is off")
-        .accessibilityLabel("Web search")
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More options")
     }
 }
 
@@ -553,16 +617,6 @@ extension ChatContextReport {
     fileprivate var tint: Color {
         if fill >= 1 { return Theme.Colors.destructive }
         return fill >= 0.8 ? Theme.Colors.warning : Theme.Colors.textSecondary
-    }
-}
-
-extension View {
-    /// The composer's menus read as options, not links: a capsule the size of the row.
-    fileprivate func composerPill() -> some View {
-        menuStyle(.button)
-            .buttonStyle(.glass)
-            .buttonBorderShape(.capsule)
-            .fixedSize()
     }
 }
 

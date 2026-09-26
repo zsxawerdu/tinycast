@@ -66,21 +66,21 @@ struct PaletteNavigationTests {
         expect(tokens.followToken != follow, "it scrolls the restored row into view instead")
 
         let nested = searchingLauncher()
-        nested.push(mode: .ai)
-        nested.query = "why is the sky blue"
-        nested.push(mode: .aiHistory)
+        nested.push(mode: .quicklinks)
+        nested.query = "docs"
+        nested.push(mode: .snippets)
         expect(
-            nested.pop() && nested.mode == .ai && nested.query == "why is the sky blue",
-            "history returns to the chat draft it was opened over")
+            nested.pop() && nested.mode == .quicklinks && nested.query == "docs",
+            "a nested screen returns to the query it was opened over")
         expect(
             nested.pop() && nested.mode == .launcher && nested.query == "clipboard",
-            "and chat returns to the search that found it")
+            "and that screen returns to the search that found it")
 
         // `replace` is for a screen swapping its own contents, which is not a step of its own.
         let replaced = searchingLauncher()
-        replaced.push(mode: .ai)
-        replaced.replace(mode: .ai)
-        expect(replaced.canGoBack, "starting a new chat keeps whatever chat was opened over")
+        replaced.push(mode: .emoji)
+        replaced.replace(mode: .emoji)
+        expect(replaced.canGoBack, "refreshing a screen keeps whatever it was opened over")
         expect(
             replaced.pop() && replaced.mode == .launcher,
             "so one back step still lands on the launcher")
@@ -105,17 +105,6 @@ struct PaletteNavigationTests {
         expect(
             hopped.pop() && hopped.mode == .launcher && hopped.query == "clipboard",
             "and the screen it crossed from is the step back")
-
-        let chatted = searchingLauncher()
-        chatted.push(mode: .ai)
-        chatted.query = "why is the sky blue"
-        chatted.push(mode: .clipboard)
-        expect(
-            chatted.pop() && chatted.mode == .ai && chatted.query == "why is the sky blue",
-            "Tab out of chat leaves the draft to come back to")
-        expect(
-            chatted.pop() && chatted.mode == .launcher,
-            "and a second step back reaches the launcher the ring started on")
 
         let pasted = searchingLauncher()
         pasted.query = "\nfirst pasted row,\r\nsecond pasted row\u{2028}third\n"

@@ -335,7 +335,7 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 
 - Palette hotkey opens the launcher; pressing it again closes it; Escape clears a non-empty query,
   then hides on a second press; clicking away closes it
-- Search a mode command (Clipboard History, Search Emoji, Search Quicklinks, Search Files, Quick AI)
+- Search a mode command (Clipboard History, Search Emoji, Search Quicklinks, Search Files)
   and run it: Escape returns to the launcher **with the query still typed and the row still
   selected**, and the next press clears it. The same screen from its own global hotkey hides the
   palette instead, and shows its own header icon rather than a back chevron
@@ -578,6 +578,18 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 - Declining leaves the feature off and prompts for nothing
 - After enabling, a keyword expands in a text field; an argument-bearing snippet prompts then delivers
 - Editing a snippet file externally reloads it
+
+### Quick AI
+
+- The Quick AI shortcut opens the composer bar over another app without activating Tinycast; a
+  second press closes it and hands focus back; pressed while another app has focus, it refocuses
+- Sending grows the bar upward into the chat, and the composer stays where it was
+- ⎋ and ⌘W close it, and a reply still streaming keeps arriving when it is reopened
+- The chat switcher opens a recent chat; one the AI Chat window holds opens in the window instead
+- ⌘J and the header's window button move the chat, and any half-typed text, into AI Chat
+- ⌘V with a file on the board stages it; with text on the board it pastes the text
+- Tab from the launcher with text typed asks it; with nothing typed it goes to the clipboard
+- The bar can be dragged by the grown panel's header, and reopens where it was left
 
 ### Calculator and currency
 

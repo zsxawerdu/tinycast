@@ -323,17 +323,24 @@ AI Chat is a titled window built the way Settings is, not a palette sibling like
 `NSSplitViewController` whose sidebar item takes the system sidebar material, a unified toolbar with
 an inline title, and native `List`, `Menu` and context menus. Nothing about it scales with Interface
 Size. The composer is untinted Liquid Glass at `Radius.dialog`, stacked under the transcript so nothing
-scrolls behind it, with `.glass` capsules for its model and reasoning menus, and its glass on a
-background layer rather than the box.
+scrolls behind it, its glass on a background layer rather than the box. Its controls are borderless:
+**+** and the tools glyph on the left, then the model name with its effort in secondary ink, ···,
+the context ring and Send on the right.
 The title bar keeps the system's own toolbar band, as any document window's does. The context card
 the gauge raises on hover is glass over a solid `windowBackgroundColor`, because it rises over
 transcript text, and sits in the transcript's own frame at its bottom edge, so no window size can
 push it off screen. A reply's choices are `.glass` capsules that rise out of the composer's top
 edge. Find marks words in `Colors.findMatch` / `findCurrent`, the system yellow, with
 `findCurrentInk` black on the solid one in both appearances. Transcript lines sit
-`spacing.chatLine 4` apart on both surfaces. The transcript itself is the palette's `ChatTranscriptView`
-with `surface: .window`, which leaves out `edgeDissolve` and `thinScrollbar` — both are measured
-against the palette's bars — and caps the column at `aiChatReadingWidth`, centred.
+`spacing.chatLine 4` apart on both surfaces. `ChatTranscriptView` leaves out `edgeDissolve` and
+`thinScrollbar` — both are measured against the palette's bars — and caps the column at
+`aiChatReadingWidth`, centred.
+
+Quick AI draws the same `AIChatDetailView` in a borderless panel with the palette's recipe —
+`panelScrim` over `GlassEffectView`, clipped at `Radius.panel`. Standing alone, its composer is the
+whole panel and drops its own glass rather than stacking a second pane on the first; grown, it takes
+the window's glass composer under a `quickChatHeader 44` row. Its `.help()` labels only show once
+Tinycast is active, as in the window, since the panel never activates the app.
 
 ---
 

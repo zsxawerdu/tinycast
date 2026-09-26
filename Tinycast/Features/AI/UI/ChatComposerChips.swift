@@ -114,3 +114,14 @@ private struct ComposerThumbnail: View {
         .task(id: id) { image = data.flatMap(NSImage.init(data:)) }
     }
 }
+
+extension ChatAttachment {
+    /// One glyph per kind, for a chip with no picture to show.
+    var glyph: String {
+        switch kind {
+        case .image: return "photo"
+        case .pdf: return "doc.richtext"
+        case .text: return "doc.plaintext"
+        }
+    }
+}

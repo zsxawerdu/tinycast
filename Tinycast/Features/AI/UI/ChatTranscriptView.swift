@@ -8,19 +8,12 @@ struct ChatFindHighlight: Equatable {
     let current: ChatFindOccurrence?
 }
 
-/// Where a transcript is drawn: the palette's scroll grammar is measured against its own bars.
-enum ChatSurface {
-    case palette
-    case window
-}
-
 struct ChatTranscriptView: View {
 
     @Environment(\.metrics) private var metrics
     let messages: [ChatMessage]
     let status: String?
     let usage: AIUsage?
-    let surface: ChatSurface
     /// Offered on the last reply once it has finished; nil where a surface has no room for it.
     var onRegenerate: (() -> Void)?
     /// Answers with one of the last reply's choices; nil leaves them unshown.
@@ -69,16 +62,12 @@ struct ChatTranscriptView: View {
                 }
                 .padding(.horizontal, metrics.spacing.xxl)
                 .padding(.top, metrics.spacing.xl)
-                .padding(
-                    .bottom,
-                    surface == .palette ? metrics.spacing.chatTranscriptBottom : metrics.spacing.xl
-                )
+                .padding(.bottom, metrics.spacing.xl)
                 .lineSpacing(metrics.spacing.chatLine)
                 // A window can be any width; a line of prose past this stops being readable.
-                .frame(maxWidth: surface == .window ? Theme.Size.aiChatReadingWidth : nil)
+                .frame(maxWidth: Theme.Size.aiChatReadingWidth)
                 .frame(maxWidth: .infinity)
             }
-            .modifier(TranscriptScrollChrome(surface: surface))
             // Reopened chats start at the latest message; other anchor roles fight the reader.
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .onScrollGeometryChange(for: ScrollMark.self) { geometry in
@@ -132,18 +121,6 @@ struct ChatTranscriptView: View {
     private func follow(_ proxy: ScrollViewProxy, always: Bool) {
         guard always || followsTail else { return }
         proxy.scrollTo("ai-transcript-tail", anchor: .bottom)
-    }
-}
-
-/// The dissolve and thin bar are tuned to the palette's floating bars; a window scrolls natively.
-private struct TranscriptScrollChrome: ViewModifier {
-    let surface: ChatSurface
-
-    func body(content: Content) -> some View {
-        switch surface {
-        case .palette: content.edgeDissolve().thinScrollbar()
-        case .window: content
-        }
     }
 }
 

@@ -1,6 +1,6 @@
 import Foundation
 
-/// The three surfaces stay reachable one way, and chat is skipped when off.
+/// The launcher and clipboard stay reachable one way, and a typed question goes to Quick AI.
 @main
 @MainActor
 struct PaletteTabTests {
@@ -16,92 +16,49 @@ struct PaletteTabTests {
         }
     }
 
+    static func resolve(
+        _ mode: PaletteMode, query: Bool = false, ai: Bool = true, clipboard: Bool = true
+    ) -> PaletteTabAction {
+        PaletteTabAction.resolve(
+            mode: mode, hasQuery: query, aiEnabled: ai, clipboardEnabled: clipboard)
+    }
+
     static func main() {
         expect(
-            PaletteTabAction.resolve(mode: .launcher, aiEnabled: true, clipboardEnabled: true),
-            .ask,
-            "the launcher hands the typed text to chat as the question, not as a draft")
+            resolve(.launcher, query: true), .ask,
+            "the launcher hands the typed text to Quick AI as the question")
         expect(
-            PaletteTabAction.resolve(mode: .ai, aiEnabled: true, clipboardEnabled: true),
-            .freshScreen(.clipboard),
-            "chat hands on to the clipboard without carrying the unsent draft into the filter")
+            resolve(.launcher), .carryQuery(.clipboard),
+            "with nothing typed there is no question, so Tab rings on to the clipboard")
         expect(
-            PaletteTabAction.resolve(mode: .clipboard, aiEnabled: true, clipboardEnabled: true),
-            .carryQuery(.launcher),
+            resolve(.clipboard, query: true), .carryQuery(.launcher),
             "the clipboard closes the ring, and one search narrows both lists")
 
-        // Off, chat has no launcher command and no hotkey; the ring must not strand a reader there.
+        // Off, Quick AI has no command and no hotkey; the ring must not strand a reader there.
         expect(
-            PaletteTabAction.resolve(mode: .launcher, aiEnabled: false, clipboardEnabled: true),
-            .carryQuery(.clipboard),
-            "turned off, chat is skipped and the launcher flips straight to the clipboard")
+            resolve(.launcher, query: true, ai: false), .carryQuery(.clipboard),
+            "turned off, a typed query rings on to the clipboard instead of asking")
         expect(
-            PaletteTabAction.resolve(mode: .clipboard, aiEnabled: false, clipboardEnabled: true),
-            .carryQuery(.launcher),
+            resolve(.clipboard, ai: false), .carryQuery(.launcher),
             "turned off, the clipboard still returns to the launcher")
 
         // A sub-screen is reached by a command or a hotkey, so Tab leaves rather than ringing on.
-        for mode in [
-            PaletteMode.aiHistory, .emoji, .fileSearch, .calculatorHistory, .quicklinks, .snippets
-        ] {
+        for mode in [PaletteMode.emoji, .fileSearch, .calculatorHistory, .quicklinks, .snippets] {
             expect(
-                PaletteTabAction.resolve(mode: mode, aiEnabled: true, clipboardEnabled: true),
-                .carryQuery(.launcher),
+                resolve(mode, query: true), .carryQuery(.launcher),
                 "\(mode.rawValue) is a sub-screen, so Tab exits to the launcher")
         }
-
         expect(
-            PaletteTabAction.resolve(
-                mode: .extensionCommand, aiEnabled: true, clipboardEnabled: true),
-            .carryQuery(.launcher),
+            resolve(.extensionCommand), .carryQuery(.launcher),
             "an extension command exits to the launcher rather than joining the ring")
 
         // Both stops off, so Tab has nowhere to ring on to and must leave the launcher standing.
         expect(
-            PaletteTabAction.resolve(
-                mode: .launcher, aiEnabled: false, clipboardEnabled: false),
-            .carryQuery(.launcher),
+            resolve(.launcher, ai: false, clipboard: false), .carryQuery(.launcher),
             "with the clipboard off too, the launcher rings back onto itself")
         expect(
-            PaletteTabAction.resolve(mode: .ai, aiEnabled: true, clipboardEnabled: false),
-            .carryQuery(.launcher),
-            "turned off, the clipboard is skipped and chat returns to the launcher")
-
-        // Three presses from the launcher have to land back on it, or the ring is a dead end.
-        var mode = PaletteMode.launcher
-        var visited: [PaletteMode] = []
-        for _ in 0..<3 {
-            switch PaletteTabAction.resolve(mode: mode, aiEnabled: true, clipboardEnabled: true) {
-            case .carryQuery(let next), .freshScreen(let next): mode = next
-            // Asking opens chat, so the ring still steps onto it.
-            case .ask: mode = .ai
-            }
-            visited.append(mode)
-        }
-        if visited == [.ai, .clipboard, .launcher] {
-            passes += 1
-        } else {
-            failures += 1
-            print("FAIL: three presses ring back to the launcher — got \(visited)")
-        }
-
-        var offMode = PaletteMode.launcher
-        var offVisited: [PaletteMode] = []
-        for _ in 0..<2 {
-            switch PaletteTabAction.resolve(
-                mode: offMode, aiEnabled: false, clipboardEnabled: true)
-            {
-            case .carryQuery(let next), .freshScreen(let next): offMode = next
-            case .ask: offMode = .ai
-            }
-            offVisited.append(offMode)
-        }
-        if offVisited == [.clipboard, .launcher] {
-            passes += 1
-        } else {
-            failures += 1
-            print("FAIL: turned off, two presses ring back to the launcher — got \(offVisited)")
-        }
+            resolve(.launcher, clipboard: false), .carryQuery(.launcher),
+            "with the clipboard off and nothing typed, the launcher rings back onto itself")
 
         print("\(passes) passed, \(failures) failed")
         if failures > 0 { exit(1) }

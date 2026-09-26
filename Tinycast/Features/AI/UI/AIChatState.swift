@@ -137,13 +137,6 @@ final class AIChatState {
         pendingAttachments.removeAll { $0.id == id }
     }
 
-    @discardableResult
-    func removeLastAttachment() -> Bool {
-        guard !pendingAttachments.isEmpty else { return false }
-        pendingAttachments.removeLast()
-        return true
-    }
-
     func clearAttachments() {
         clearStaging()
     }
